@@ -1,0 +1,917 @@
+diff --git a/evaluations/libero/libero_10_smolvla_collect.yaml b/evaluations/libero/libero_10_smolvla_collect.yaml
+new file mode 100644
+index 00000000..d13687ed
+--- /dev/null
++++ b/evaluations/libero/libero_10_smolvla_collect.yaml
+@@ -0,0 +1,87 @@
++# Collect LIBERO-10 Task 0 rollouts with a LeRobot SmolVLA policy, for RECAP Steps 1-3.
++#
++# Extends libero_10_smolvla_eval.yaml with env.eval.data_collection (lerobot format). The eval reset
++# pool cycles over Task 0's fixed init states (env.eval.use_ordered_reset_state_ids), and SmolVLA's
++# flow-matching sampling is stochastic, so repeated passes over the same ~50 init states still yield
++# varied trajectories with a mix of successes and failures — the same shape as
++# RLinf/RECAP-Libero10-Task0-48succ-Data's libero10_task0_train / libero10_task0_eval.
++#
++# rollout_epoch controls how many trajectories are collected: with total_num_envs=E init states run
++# in parallel and N = max_steps_per_rollout_epoch / max_episode_steps passes per epoch, one epoch
++# yields roughly rollout_epoch * N * E episodes (exact count depends on how many envs still have a
++# trajectory in flight when the run ends; see scripts/convert_rlinf_collected_to_v21.py --max-episodes
++# to trim to an exact count).
++#
++# Usage (from RLinf/):
++#   bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
++#     rollout.model.model_path=/path/to/smolvla_libero_plus \
++#     env.eval.data_collection.save_dir=/path/to/save/rollout_dir
++# Task 0 sft-sized eval split (~64 episodes): add env.eval.rollout_epoch=2 (2*50=100, trim to 64).
++# Task 0 train split (~4096 episodes): env.eval.rollout_epoch=82 (82*50=4100, trim to 4096).
++
++defaults:
++  - env/libero_10@env.eval
++  - model/smolvla@rollout.model
++  - override hydra/job_logging: stdout
++
++hydra:
++  run:
++    dir: .
++  output_subdir: null
++  searchpath:
++    - file://${oc.env:EMBODIED_PATH}/config/
++
++cluster:
++  num_nodes: 1
++  component_placement:
++    env,rollout: all
++
++runner:
++  task_type: embodied_eval
++  logger:
++    log_path: "../results"
++    project_name: rlinf
++    experiment_name: "libero_10_smolvla_collect"
++    logger_backends: ["tensorboard"]
++
++  max_epochs: 1
++  max_steps: -1
++  only_eval: True
++  val_check_interval: -1
++  save_interval: -1
++  resume_dir: null
++  ckpt_path: null
++
++env:
++  group_name: "EnvGroup"
++  eval:
++    task_id_filter: [0]
++    rollout_epoch: 82 # override per split, see header
++    total_num_envs: 50 # Task 0's number of fixed init states
++    auto_reset: True
++    ignore_terminations: True
++    use_fixed_reset_state_ids: True
++    use_ordered_reset_state_ids: True
++    max_episode_steps: 520
++    max_steps_per_rollout_epoch: 520 # N=1 pass per epoch; raise to collect more per epoch
++    group_size: 1
++    is_eval: True
++    video_cfg:
++      save_video: False
++    data_collection:
++      enabled: True
++      save_dir: "/path/to/save/rollout_dir"
++      export_format: "lerobot"
++      only_success: False
++      robot_type: "panda"
++      fps: 10
++
++rollout:
++  group_name: "RolloutGroup"
++  generation_backend: "huggingface"
++  recompute_logprobs: False
++  enable_offload: False
++  pipeline_stage_num: 1
++
++  model:
++    model_path: "/path/to/smolvla_libero_plus"
+diff --git a/evaluations/libero/libero_10_smolvla_eval.yaml b/evaluations/libero/libero_10_smolvla_eval.yaml
+new file mode 100644
+index 00000000..33afb026
+--- /dev/null
++++ b/evaluations/libero/libero_10_smolvla_eval.yaml
+@@ -0,0 +1,67 @@
++# LIBERO-10 evaluation for LeRobot SmolVLA checkpoints.
++#
++# Base checkpoint (e.g. lerobot/smolvla_libero_plus):
++#   bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
++#     rollout.model.model_path=/path/to/smolvla_libero_plus
++# RECAP-trained policy: add
++#   runner.ckpt_path=<sft log>/checkpoints/global_step_N/actor/model_state_dict/full_weights.pt \
++#   rollout.model.smolvla.advantage_prompt=true
++# Task 0 only (50 init states): +env.eval.task_id_filter=[0] env.eval.total_num_envs=50
++
++defaults:
++  - env/libero_10@env.eval
++  - model/smolvla@rollout.model
++  - override hydra/job_logging: stdout
++
++hydra:
++  run:
++    dir: .
++  output_subdir: null
++  searchpath:
++    - file://${oc.env:EMBODIED_PATH}/config/
++
++cluster:
++  num_nodes: 1
++  component_placement:
++    env,rollout: all
++
++runner:
++  task_type: embodied_eval
++  logger:
++    log_path: "../results"
++    project_name: rlinf
++    experiment_name: "libero_10_smolvla_eval"
++    logger_backends: ["tensorboard"]
++
++  max_epochs: 1
++  max_steps: -1
++  only_eval: True
++  val_check_interval: -1
++  save_interval: -1
++  resume_dir: null
++  ckpt_path: null
++
++env:
++  group_name: "EnvGroup"
++  eval:
++    rollout_epoch: 1
++    total_num_envs: 500
++    auto_reset: True
++    ignore_terminations: True
++    max_episode_steps: 520
++    max_steps_per_rollout_epoch: 520
++    group_size: 1
++    is_eval: True
++    video_cfg:
++      save_video: True
++      video_base_dir: ${runner.logger.log_path}/video/eval
++
++rollout:
++  group_name: "RolloutGroup"
++  generation_backend: "huggingface"
++  recompute_logprobs: False
++  enable_offload: False
++  pipeline_stage_num: 1
++
++  model:
++    model_path: "/path/to/smolvla_libero_plus"
+diff --git a/examples/embodiment/config/model/smolvla.yaml b/examples/embodiment/config/model/smolvla.yaml
+new file mode 100644
+index 00000000..01c0d609
+--- /dev/null
++++ b/examples/embodiment/config/model/smolvla.yaml
+@@ -0,0 +1,30 @@
++model_type: "smolvla"
++
++# LeRobot SmolVLA checkpoint, e.g. https://huggingface.co/lerobot/smolvla_libero_plus
++model_path: "/path/to/smolvla_libero_plus"
++
++# null keeps float32 weights (LeRobot trains SmolVLA in float32).
++precision: null
++load_to_device: True
++
++# Actions executed per env step out of the 50-step SmolVLA chunk.
++# max_steps_per_rollout_epoch must be divisible by this.
++num_action_chunks: 10
++action_dim: 7
++
++is_lora: False
++add_value_head: False
++
++smolvla:
++  # Append "\nAdvantage: positive" to every task prompt at inference.
++  # true for RECAP-trained policies, false for the base checkpoint.
++  advantage_prompt: false
++  # Local path to HuggingFaceTB/SmolVLM2-500M-Video-Instruct (config, processor,
++  # tokenizer) for offline use; null downloads it from the Hub.
++  vlm_model_name: null
++  # Action horizon used to build SFT targets (checkpoint chunk_size).
++  chunk_size: 50
++  # RLinf env / dataset image keys -> checkpoint camera keys.
++  rename_map:
++    observation.images.image: observation.images.camera1
++    observation.images.image2: observation.images.camera2
+diff --git a/examples/sft/config/libero10_task0_recap_smolvla.yaml b/examples/sft/config/libero10_task0_recap_smolvla.yaml
+new file mode 100644
+index 00000000..fe85c438
+--- /dev/null
++++ b/examples/sft/config/libero10_task0_recap_smolvla.yaml
+@@ -0,0 +1,93 @@
++# RECAP Step 4 for LeRobot SmolVLA: advantage-conditioned SFT.
++#
++# Positive-advantage frames are trained with "{task}\nAdvantage: positive"
++# (dropped to "{task}" with probability unconditional_prob), negative frames with
++# "{task}". Evaluate the result with model.smolvla.advantage_prompt=true
++# (equivalent to RLinf's CFG model with cfgrl_guidance_scale=1.0).
++#
++# Launch: bash examples/sft/run_vla_sft.sh libero10_task0_recap_smolvla
++# Prereq: LeRobot v3.0 copies of the RECAP datasets and the
++#         meta/advantages_{tag}.parquet files from RECAP Step 3.
++
++defaults:
++  - model/smolvla@actor.model
++  - hybrid_engines/fsdp@actor.fsdp_config
++  - override hydra/job_logging: stdout
++
++hydra:
++  run:
++    dir: .
++  output_subdir: null
++  searchpath:
++    - file://${oc.env:EMBODIED_PATH}/config/
++    - file://${oc.env:REPO_PATH}/examples/embodiment/config/
++
++cluster:
++  num_nodes: 1
++  component_placement:
++    actor,env,rollout: all
++
++runner:
++  task_type: sft
++  logger:
++    log_path: "../results"
++    project_name: rlinf
++    experiment_name: "smolvla_recap_sft"
++    logger_backends: ["tensorboard"]
++
++  max_epochs: -1
++  max_steps: 30000
++  val_check_interval: -1
++  save_interval: 3000
++
++data:
++  train_data_paths:
++    - dataset_path: "/path/to/v30/libero10_task0_sft"
++      advantages_path: "/path/to/libero10_task0_sft/meta/advantages_fail300_N10_q30.parquet"
++      weight: 1.0
++    - dataset_path: "/path/to/v30/libero10_task0_train"
++      advantages_path: "/path/to/libero10_task0_train/meta/advantages_fail300_N10_q30.parquet"
++      weight: 1.0
++  balance_dataset_weights: true
++  unconditional_prob: 0.1
++  num_workers: 8
++  seed: 42
++
++actor:
++  group_name: "ActorGroup"
++  training_backend: "fsdp"
++  micro_batch_size: 32
++  global_batch_size: 256
++  seed: 0
++
++  model:
++    model_path: "/path/to/smolvla_libero_plus"
++    smolvla:
++      advantage_prompt: true
++
++  optim:
++    lr: 1.0e-5
++    adam_beta1: 0.9
++    adam_beta2: 0.95
++    adam_eps: 1.0e-8
++    weight_decay: 1.0e-10
++    clip_grad: 10.0
++    warmup_style: "cosine"
++    lr_warmup_steps: 1000
++    total_training_steps: 30000
++
++  fsdp_config:
++    strategy: "fsdp"
++    sharding_strategy: "no_shard"
++    use_orig_params: False
++    gradient_checkpointing: False
++    mixed_precision:
++      param_dtype: ${actor.model.precision}
++      reduce_dtype: ${actor.model.precision}
++      buffer_dtype: ${actor.model.precision}
++
++reward:
++  use_reward_model: False
++
++critic:
++  use_critic_model: False
+diff --git a/rlinf/config.py b/rlinf/config.py
+index 1c0dc518..5b1ee307 100644
+--- a/rlinf/config.py
++++ b/rlinf/config.py
+@@ -90,6 +90,7 @@ SupportedModel.OPENVLA_OFT = SupportedModel.register("openvla_oft", force=True)
+ SupportedModel.MOLMOACT2 = SupportedModel.register("molmoact2", force=True)
+ SupportedModel.OPENPI = SupportedModel.register("openpi", force=True)
+ SupportedModel.PI0_FAST = SupportedModel.register("pi0_fast", force=True)
++SupportedModel.SMOLVLA = SupportedModel.register("smolvla", force=True)
+ SupportedModel.STARVLA = SupportedModel.register("starvla", force=True)
+ SupportedModel.MLP_POLICY = SupportedModel.register("mlp_policy", force=True)
+ SupportedModel.RLT_MLP_POLICY = SupportedModel.register("rlt_mlp_policy", force=True)
+@@ -137,6 +138,7 @@ EMBODIED_MODEL = set(
+         SupportedModel.OPENVLA_OFT,
+         SupportedModel.OPENPI,
+         SupportedModel.PI0_FAST,
++        SupportedModel.SMOLVLA,
+         SupportedModel.STARVLA,
+         SupportedModel.MLP_POLICY,
+         SupportedModel.RLT_MLP_POLICY,
+diff --git a/rlinf/data/datasets/recap/smolvla_cfg.py b/rlinf/data/datasets/recap/smolvla_cfg.py
+new file mode 100644
+index 00000000..31eea532
+--- /dev/null
++++ b/rlinf/data/datasets/recap/smolvla_cfg.py
+@@ -0,0 +1,204 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Advantage-conditioned (RECAP) SFT data for LeRobot SmolVLA.
++
++RLinf's CFG model (``cfg_model.py``) conditions pi0.5 on the prompt
++``"{task}\\nAdvantage: positive"``. With ``positive_only_conditional`` and
++``cfgrl_guidance_scale=1.0`` this reduces to supervised training where
++positive-advantage frames use the conditional prompt (dropped to the plain task
++with probability ``unconditional_prob``) and negative frames always use the
++plain task. This module builds that data for SmolVLA from LeRobot v3.0 datasets
++and the ``meta/advantages_{tag}.parquet`` files written by RECAP Step 3.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import Any
++
++import numpy as np
++import pandas as pd
++import torch
++from omegaconf import DictConfig, OmegaConf
++from torch.utils.data import ConcatDataset, DataLoader, Dataset, Sampler
++
++from rlinf.models.embodiment.smolvla.smolvla_action_model import (
++    ADVANTAGE_PROMPT_SUFFIX,
++)
++
++# RLinf RECAP datasets (libero10_task0_*) -> lerobot/libero keys.
++DEFAULT_KEY_MAP = {
++    "image": "observation.images.image",
++    "wrist_image": "observation.images.image2",
++    "state": "observation.state",
++    "actions": "action",
++}
++
++
++class SmolVLARecapDataset(Dataset):
++    """One LeRobot v3.0 dataset with per-frame advantage labels."""
++
++    def __init__(
++        self,
++        dataset_path: str,
++        advantages_path: str,
++        chunk_size: int,
++        key_map: dict[str, str],
++        unconditional_prob: float,
++        prompt_suffix: str,
++        video_backend: str | None = None,
++    ) -> None:
++        from lerobot.datasets.lerobot_dataset import LeRobotDataset
++
++        root = Path(dataset_path)
++        action_key = next(src for src, dst in key_map.items() if dst == "action")
++        probe = LeRobotDataset(f"local/{root.name}", root=root, video_backend=video_backend)
++        fps = probe.meta.fps
++        self.dataset = LeRobotDataset(
++            f"local/{root.name}",
++            root=root,
++            delta_timestamps={action_key: [i / fps for i in range(chunk_size)]},
++            video_backend=video_backend,
++        )
++        self.key_map = dict(key_map)
++        self.key_map[f"{action_key}_is_pad"] = "action_is_pad"
++        self.unconditional_prob = float(unconditional_prob)
++        self.prompt_suffix = prompt_suffix
++
++        adv = pd.read_parquet(
++            advantages_path, columns=["episode_index", "frame_index", "advantage"]
++        )
++        lookup = dict(
++            zip(zip(adv.episode_index, adv.frame_index), adv.advantage.astype(bool))
++        )
++        rows = self.dataset.hf_dataset.select_columns(["episode_index", "frame_index"])
++        episode_index = np.asarray(rows["episode_index"]).reshape(-1)
++        frame_index = np.asarray(rows["frame_index"]).reshape(-1)
++        missing = [
++            (int(e), int(f))
++            for e, f in zip(episode_index, frame_index)
++            if (int(e), int(f)) not in lookup
++        ]
++        if missing:
++            raise ValueError(
++                f"{len(missing)} frames of {root} have no advantage label in "
++                f"{advantages_path} (first: {missing[:5]}). Re-run RECAP Step 3 on "
++                "this dataset."
++            )
++        self.advantage = np.array(
++            [lookup[(int(e), int(f))] for e, f in zip(episode_index, frame_index)],
++            dtype=bool,
++        )
++
++    def __len__(self) -> int:
++        return len(self.dataset)
++
++    def __getitem__(self, idx: int) -> dict[str, Any]:
++        item = self.dataset[idx]
++        sample = {dst: item[src] for src, dst in self.key_map.items()}
++        task = item["task"]
++        # Re-sampled every time, like RLinf's per-step unconditional dropout.
++        if self.advantage[idx] and torch.rand(()).item() >= self.unconditional_prob:
++            task = task + self.prompt_suffix
++        sample["task"] = task
++        return sample
++
++
++class WeightedDistributedSampler(Sampler[int]):
++    """Sample with replacement by per-item weight, sharded across ranks."""
++
++    def __init__(
++        self, weights: torch.Tensor, num_replicas: int, rank: int, seed: int = 0
++    ) -> None:
++        self.weights = weights
++        self.num_replicas = num_replicas
++        self.rank = rank
++        self.seed = seed
++        self.epoch = 0
++        self.num_samples = len(weights) // num_replicas
++
++    def set_epoch(self, epoch: int) -> None:
++        self.epoch = epoch
++
++    def __iter__(self):
++        generator = torch.Generator().manual_seed(self.seed + self.epoch)
++        indices = torch.multinomial(
++            self.weights,
++            self.num_samples * self.num_replicas,
++            replacement=True,
++            generator=generator,
++        )
++        return iter(indices[self.rank :: self.num_replicas].tolist())
++
++    def __len__(self) -> int:
++        return self.num_samples
++
++
++def build_smolvla_recap_sft_dataloader(
++    cfg: DictConfig, world_size: int, global_rank: int, data_paths: Any
++):
++    """Build the RECAP SFT dataloader for SmolVLA.
++
++    ``data.train_data_paths`` entries: ``dataset_path`` (LeRobot v3.0 root),
++    ``advantages_path`` (RECAP Step 3 parquet) and optional ``weight``.
++    """
++    data_cfg = cfg.data
++    model_cfg = cfg.actor.model
++    smolvla_cfg = model_cfg.get("smolvla", {}) or {}
++    key_map = data_cfg.get("key_map")
++    key_map = (
++        OmegaConf.to_container(key_map, resolve=True) if key_map else DEFAULT_KEY_MAP
++    )
++
++    datasets, weights = [], []
++    for entry in data_paths:
++        dataset = SmolVLARecapDataset(
++            dataset_path=entry["dataset_path"],
++            advantages_path=entry["advantages_path"],
++            chunk_size=int(smolvla_cfg.get("chunk_size", 50)),
++            key_map=key_map,
++            unconditional_prob=float(data_cfg.get("unconditional_prob", 0.1)),
++            prompt_suffix=ADVANTAGE_PROMPT_SUFFIX,
++            video_backend=data_cfg.get("video_backend", None),
++        )
++        weight = float(entry.get("weight", 1.0))
++        if data_cfg.get("balance_dataset_weights", True):
++            # Each dataset contributes by its weight regardless of its size.
++            weight = weight / len(dataset)
++        datasets.append(dataset)
++        weights.append(torch.full((len(dataset),), weight, dtype=torch.double))
++        if global_rank == 0:
++            print(
++                f"[smolvla recap] {entry['dataset_path']}: {len(dataset)} frames, "
++                f"positive {dataset.advantage.mean():.1%}"
++            )
++
++    sampler = WeightedDistributedSampler(
++        torch.cat(weights),
++        num_replicas=world_size,
++        rank=global_rank,
++        seed=int(data_cfg.get("seed", 42)),
++    )
++    num_workers = int(data_cfg.get("num_workers", 4))
++    data_loader = DataLoader(
++        ConcatDataset(datasets),
++        batch_size=cfg.actor.micro_batch_size,
++        sampler=sampler,
++        num_workers=num_workers,
++        pin_memory=True,
++        drop_last=True,
++        persistent_workers=num_workers > 0,
++    )
++    return data_loader, {}
+diff --git a/rlinf/data/storage/lerobot/writer.py b/rlinf/data/storage/lerobot/writer.py
+index 975b7360..6fa8ac2e 100644
+--- a/rlinf/data/storage/lerobot/writer.py
++++ b/rlinf/data/storage/lerobot/writer.py
+@@ -207,6 +207,12 @@ class LeRobotDatasetWriter:
+         if self.dataset is None:
+             raise RuntimeError("Dataset not created. Call create() first.")
+ 
++        # lerobot >= 0.4 buffers episode metadata and parquet footers until
++        # finalize(); without it the dataset has no meta/episodes and is unreadable.
++        dataset_finalize = getattr(self.dataset, "finalize", None)
++        if callable(dataset_finalize):
++            dataset_finalize()
++
+         if (
+             hasattr(self.dataset, "image_writer")
+             and self.dataset.image_writer is not None
+@@ -223,7 +229,8 @@ class LeRobotDatasetWriter:
+         if hasattr(self.dataset, "episode_buffer"):
+             self.dataset.episode_buffer = None
+ 
+-        if hasattr(self.dataset, "hf_dataset"):
++        # vars(): in lerobot >= 0.4 hf_dataset is a property that loads the dataset.
++        if "hf_dataset" in vars(self.dataset):
+             self.dataset.hf_dataset = None
+ 
+         del self.dataset
+diff --git a/rlinf/models/__init__.py b/rlinf/models/__init__.py
+index 8787741a..16a52611 100644
+--- a/rlinf/models/__init__.py
++++ b/rlinf/models/__init__.py
+@@ -79,6 +79,11 @@ def _register_builtin_models():
+ 
+         return get_model(cfg, torch_dtype)
+ 
++    def _build_smolvla(cfg: DictConfig, torch_dtype):
++        from rlinf.models.embodiment.smolvla import get_model
++
++        return get_model(cfg, torch_dtype)
++
+     def _build_dexbotic_pi(cfg: DictConfig, torch_dtype):
+         from rlinf.models.embodiment.dexbotic_pi import get_model
+ 
+@@ -219,6 +224,12 @@ def _register_builtin_models():
+         category="embodied",
+         force=True,
+     )
++    register_model(
++        SupportedModel.SMOLVLA.value,
++        _build_smolvla,
++        category="embodied",
++        force=True,
++    )
+     register_model(
+         SupportedModel.DEXBOTIC_PI.value,
+         _build_dexbotic_pi,
+diff --git a/rlinf/models/embodiment/smolvla/__init__.py b/rlinf/models/embodiment/smolvla/__init__.py
+new file mode 100644
+index 00000000..8601a486
+--- /dev/null
++++ b/rlinf/models/embodiment/smolvla/__init__.py
+@@ -0,0 +1,158 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""SmolVLA embodied policy wrapper for RLinf.
++
++Exposes ``get_model``, which loads LeRobot's ``SmolVLAPolicy`` (e.g.
++``lerobot/smolvla_libero_plus``) from a checkpoint directory and wraps it in
++``SmolVLAForRLActionPrediction`` for evaluation rollouts and SFT.
++"""
++
++from __future__ import annotations
++
++import torch
++from omegaconf import DictConfig, OmegaConf
++
++from rlinf.models.embodiment.smolvla.smolvla_action_model import (
++    ADVANTAGE_PROMPT_SUFFIX,
++    SmolVLAForRLActionPrediction,
++)
++
++# RLinf env observations are converted to lerobot/libero keys; SmolVLA LIBERO
++# checkpoints expect camera1 (agent view) / camera2 (wrist).
++DEFAULT_RENAME_MAP = {
++    "observation.images.image": "observation.images.camera1",
++    "observation.images.image2": "observation.images.camera2",
++}
++
++
++def _load_processor(model_path: str, processor_type: str, overrides: dict):
++    from lerobot.processor import PolicyProcessorPipeline
++
++    loader_kwargs = {}
++    if processor_type == "pre":
++        # Registers smolvla_new_line_processor.
++        import lerobot.policies.smolvla.processor_smolvla  # noqa: F401
++
++        config_filename = "policy_preprocessor.json"
++    else:
++        from lerobot.processor.converters import (
++            policy_action_to_transition,
++            transition_to_policy_action,
++        )
++
++        config_filename = "policy_postprocessor.json"
++        loader_kwargs = {
++            "to_transition": policy_action_to_transition,
++            "to_output": transition_to_policy_action,
++        }
++
++    # The device step is dropped below; build it on CPU so loading never needs CUDA.
++    overrides = {"device_processor": {"device": "cpu"}, **overrides}
++    processor = PolicyProcessorPipeline.from_pretrained(
++        model_path, config_filename=config_filename, overrides=overrides, **loader_kwargs
++    )
++    # Inputs are already batched, and the wrapper moves tensors to the policy
++    # device itself (works for rollout workers, FSDP ranks and CPU alike).
++    processor.steps = [
++        step
++        for step in processor.steps
++        if step.__class__.__name__
++        not in ("AddBatchDimensionProcessorStep", "DeviceProcessorStep")
++    ]
++    return processor
++
++
++def get_model(
++    cfg: DictConfig,
++    torch_dtype: torch.dtype | None = None,
++) -> SmolVLAForRLActionPrediction:
++    """Build an RLinf policy wrapper around LeRobot's SmolVLAPolicy.
++
++    Args:
++        cfg: SmolVLA model configuration (``model/smolvla.yaml``).
++        torch_dtype: Requested model dtype; ``None`` keeps float32 weights.
++
++    Returns:
++        The SmolVLA policy adapted to RLinf's embodied policy interface.
++    """
++    try:
++        from lerobot.configs.policies import PreTrainedConfig
++        from lerobot.policies.smolvla import SmolVLAConfig, SmolVLAPolicy
++    except ImportError as exc:
++        raise ImportError(
++            "smolvla requires LeRobot with SmolVLA support. Install with: "
++            "bash requirements/install.sh embodied --model pi0_fast --env libero "
++            "&& uv pip install 'num2words>=0.5.14,<0.6.0'"
++        ) from exc
++
++    model_cfg = cfg.get("smolvla", {}) or {}
++    model_path = str(cfg.model_path)
++
++    policy_config = PreTrainedConfig.from_pretrained(model_path)
++    if not isinstance(policy_config, SmolVLAConfig):
++        raise TypeError(
++            "Expected a LeRobot SmolVLAConfig for smolvla model_path, got "
++            f"{type(policy_config).__name__}."
++        )
++    num_action_chunks = int(cfg.num_action_chunks)
++    if not 0 < num_action_chunks <= policy_config.chunk_size:
++        raise ValueError(
++            f"smolvla num_action_chunks must be in [1, {policy_config.chunk_size}], "
++            f"got {num_action_chunks}."
++        )
++    checkpoint_action_dim = policy_config.output_features["action"].shape[0]
++    if int(cfg.action_dim) != checkpoint_action_dim:
++        raise ValueError(
++            "smolvla model.action_dim must match the checkpoint action feature "
++            f"({checkpoint_action_dim}), got {cfg.action_dim}."
++        )
++
++    # The full policy weights come from the checkpoint; do not download the
++    # SmolVLM2 backbone weights again.
++    policy_config.load_vlm_weights = False
++    if model_cfg.get("vlm_model_name"):
++        policy_config.vlm_model_name = str(model_cfg.vlm_model_name)
++    policy_config.device = "cpu"
++
++    policy = SmolVLAPolicy.from_pretrained(model_path, config=policy_config)
++    if torch_dtype is not None:
++        policy = policy.to(dtype=torch_dtype)
++
++    rename_map = model_cfg.get("rename_map")
++    rename_map = (
++        OmegaConf.to_container(rename_map, resolve=True)
++        if rename_map is not None
++        else DEFAULT_RENAME_MAP
++    )
++    pre_overrides = {"rename_observations_processor": {"rename_map": rename_map}}
++    if model_cfg.get("vlm_model_name"):
++        pre_overrides["tokenizer_processor"] = {
++            "tokenizer_name": str(model_cfg.vlm_model_name)
++        }
++
++    return SmolVLAForRLActionPrediction(
++        policy,
++        action_dim=int(cfg.action_dim),
++        num_action_chunks=num_action_chunks,
++        prompt_suffix=(
++            ADVANTAGE_PROMPT_SUFFIX if model_cfg.get("advantage_prompt", False) else ""
++        ),
++        image_size=model_cfg.get("image_size", None),
++        preprocessor=_load_processor(model_path, "pre", pre_overrides),
++        postprocessor=_load_processor(model_path, "post", {}),
++    )
++
++
++__all__ = ["SmolVLAForRLActionPrediction", "get_model"]
+diff --git a/rlinf/models/embodiment/smolvla/smolvla_action_model.py b/rlinf/models/embodiment/smolvla/smolvla_action_model.py
+new file mode 100644
+index 00000000..72000a21
+--- /dev/null
++++ b/rlinf/models/embodiment/smolvla/smolvla_action_model.py
+@@ -0,0 +1,129 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++from __future__ import annotations
++
++from collections.abc import Callable
++from typing import Any, Literal
++
++import torch
++import torch.nn as nn
++
++from rlinf.models.embodiment.base_policy import BasePolicy, ForwardType
++from rlinf.models.embodiment.pi0_fast.lerobot_io import (
++    build_lerobot_batch_from_env_obs,
++)
++
++
++# Same conditional prompt as RLinf's CFG model (rlinf/data/datasets/recap/cfg_model.py).
++ADVANTAGE_PROMPT_SUFFIX = "\nAdvantage: positive"
++
++
++class SmolVLAForRLActionPrediction(nn.Module, BasePolicy):
++    """Adapt LeRobot SmolVLA inference and flow-matching SFT to RLinf's policy API.
++
++    ``prompt_suffix`` is appended to every task description at inference. For
++    RECAP (advantage-conditioned training, see
++    ``rlinf/data/datasets/recap/smolvla_cfg.py``) it is
++    ``ADVANTAGE_PROMPT_SUFFIX``, which matches RLinf's CFG model with
++    ``cfgrl_guidance_scale=1.0`` (conditional prediction only).
++    """
++
++    def __init__(
++        self,
++        policy: nn.Module,
++        *,
++        action_dim: int,
++        num_action_chunks: int,
++        prompt_suffix: str = "",
++        image_size: int | None = None,
++        preprocessor: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
++        postprocessor: Callable[[torch.Tensor], torch.Tensor] | None = None,
++    ) -> None:
++        super().__init__()
++        self.policy = policy
++        self.action_dim = int(action_dim)
++        self.num_action_chunks = int(num_action_chunks)
++        self.prompt_suffix = prompt_suffix
++        self.image_size = image_size
++        self.preprocessor = preprocessor
++        self.postprocessor = postprocessor
++
++    def _prepare_lerobot_batch(self, batch: dict[str, Any]) -> dict[str, Any]:
++        """Rename, tokenize and normalize, then move tensors to the policy device."""
++        if self.preprocessor is not None:
++            batch = self.preprocessor(batch)
++        first_param = next(self.parameters())
++        prepared = {}
++        for key, value in batch.items():
++            if torch.is_tensor(value):
++                if value.is_floating_point():
++                    value = value.to(device=first_param.device, dtype=first_param.dtype)
++                else:
++                    value = value.to(device=first_param.device)
++            prepared[key] = value
++        return prepared
++
++    def predict_action_batch(
++        self,
++        env_obs: dict[str, Any],
++        mode: Literal["train", "eval"] = "train",
++        **kwargs: Any,
++    ) -> tuple[torch.Tensor, dict[str, Any]]:
++        """Predict one action chunk for each environment.
++
++        Args:
++            env_obs: Batched RLinf environment observations.
++            mode: Rollout mode. SmolVLA inference is the same in both modes.
++            **kwargs: Unused RLinf sampling parameters.
++
++        Returns:
++            Unnormalized actions ``[B, num_action_chunks, action_dim]`` on CPU and
++            an empty rollout result (no logprobs or values).
++        """
++        del mode, kwargs
++        batch = build_lerobot_batch_from_env_obs(env_obs, image_size=self.image_size)
++        if self.prompt_suffix:
++            batch["task"] = [task + self.prompt_suffix for task in batch["task"]]
++        batch = self._prepare_lerobot_batch(batch)
++
++        actions = self.policy.predict_action_chunk(batch)
++        actions = actions[:, : self.num_action_chunks, : self.action_dim]
++        actions = actions.float().cpu()
++        if self.postprocessor is not None:
++            actions = self.postprocessor(actions)
++        return actions, {
++            "prev_logprobs": None,
++            "prev_values": None,
++            "forward_inputs": {},
++        }
++
++    def forward(self, forward_type=ForwardType.DEFAULT, **kwargs):
++        if forward_type == ForwardType.SFT:
++            return self.sft_forward(**kwargs)
++        raise NotImplementedError(
++            f"smolvla does not implement forward_type={forward_type!r}."
++        )
++
++    def default_forward(self, **kwargs):
++        raise NotImplementedError(
++            "smolvla supports evaluation rollouts and SFT only (no RL actor update)."
++        )
++
++    def sft_forward(self, data: dict[str, Any], **kwargs: Any) -> dict[str, torch.Tensor]:
++        """Flow-matching loss on a batch from ``build_smolvla_recap_sft_dataloader``."""
++        del kwargs
++        batch = self._prepare_lerobot_batch(dict(data))
++        loss, _ = self.policy.forward(batch)
++        return {"loss": loss}
+diff --git a/rlinf/workers/rollout/hf/huggingface_worker.py b/rlinf/workers/rollout/hf/huggingface_worker.py
+index 455d2250..6b3ab752 100644
+--- a/rlinf/workers/rollout/hf/huggingface_worker.py
++++ b/rlinf/workers/rollout/hf/huggingface_worker.py
+@@ -495,6 +495,7 @@ class MultiStepRolloutWorker(Worker):
+         if model_type in [
+             SupportedModel.OPENPI,
+             SupportedModel.PI0_FAST,
++            SupportedModel.SMOLVLA,
+             SupportedModel.EVO1,
+             SupportedModel.MLP_POLICY,
+             SupportedModel.GR00T,
+diff --git a/rlinf/workers/sft/fsdp_vla_sft_worker.py b/rlinf/workers/sft/fsdp_vla_sft_worker.py
+index d0b8eb47..58ddfeeb 100644
+--- a/rlinf/workers/sft/fsdp_vla_sft_worker.py
++++ b/rlinf/workers/sft/fsdp_vla_sft_worker.py
+@@ -74,6 +74,14 @@ class FSDPVlaSftWorker(FSDPSftWorker):
+             return build_fastwam_sft_dataloader(
+                 self.cfg, self._world_size, self._rank, data_paths, eval_dataset
+             )
++        elif model_type == SupportedModel.SMOLVLA:
++            from rlinf.data.datasets.recap.smolvla_cfg import (
++                build_smolvla_recap_sft_dataloader,
++            )
++
++            return build_smolvla_recap_sft_dataloader(
++                self.cfg, self._world_size, self._rank, data_paths
++            )
+         else:
+             raise KeyError(
+                 f"not support such model type {self.cfg.actor.model.model_type} for SFT right now."

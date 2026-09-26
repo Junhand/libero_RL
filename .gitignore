@@ -1,0 +1,8 @@
+# pixi environments
+.pixi
+
+# datasets
+data/
+
+# temporary work files
+tmp/

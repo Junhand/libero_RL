@@ -1,0 +1,38 @@
+[workspace]
+authors = ["Junhand <jun1493907@gmail.com>"]
+channels = ["conda-forge"]
+name = "libero_RL"
+platforms = ["osx-arm64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.11.*"
+huggingface_hub = ">=1.32.0,<2"
+pandas = ">=3.0.6,<4"
+pyarrow = ">=25.0.0,<26"
+
+# LeRobot (smolVLA) environment: pixi run -e lerobot <cmd>
+[feature.lerobot.dependencies]
+python = "3.12.*"
+ffmpeg = "7.*"
+
+[feature.lerobot.pypi-dependencies]
+lerobot = { version = "==0.6.1", extras = ["smolvla", "libero", "training", "dataset"] }
+
+# LeRobot 0.3.3: the last release that reads LeRobot v2.0 datasets (v2.0 -> v2.1 conversion)
+[feature.lerobot-v21.dependencies]
+python = "3.10.*"
+ffmpeg = "7.*"
+
+[feature.lerobot-v21.system-requirements]
+libc = { family = "glibc", version = "2.31" }  # rerun-sdk wheels are manylinux_2_31
+
+[feature.lerobot-v21.pypi-dependencies]
+lerobot = "==0.3.3"
+av = ">=14.2,<16"  # av 17 has no Python 3.10 wheels
+
+[environments]
+lerobot = { features = ["lerobot"], no-default-feature = true }
+lerobot-v21 = { features = ["lerobot-v21"], no-default-feature = true }
