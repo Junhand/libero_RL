@@ -7,5 +7,8 @@ data/
 # downloaded models
 models/
 
+# rollout collection output (RECAP smolVLA step 5)
+collected/
+
 # temporary work files
 tmp/

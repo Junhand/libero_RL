@@ -1,0 +1,48 @@
+diff --git a/rlinf/envs/sim/libero/libero_env.py b/rlinf/envs/sim/libero/libero_env.py
+index 05679da0..38755fc9 100644
+--- a/rlinf/envs/sim/libero/libero_env.py
++++ b/rlinf/envs/sim/libero/libero_env.py
+@@ -149,6 +149,17 @@ class LiberoEnv(gym.Env):
+         self.ignore_terminations = cfg.ignore_terminations
+         self.auto_reset = cfg.auto_reset
+         self.is_eval = cfg.get("is_eval", False)
++        # Bulk rollout collection (RECAP-style) needs every completed episode,
++        # not just the first visit to each fixed reset state: the eval-mode
++        # dedup below exists to keep aggregate eval metrics from double-
++        # counting a state visited more than once, but it must not suppress
++        # the termination/truncation signal a data-collection wrapper relies
++        # on to flush an episode.
++        data_collection_cfg = cfg.get("data_collection", None)
++        self._collect_all_episodes = bool(
++            data_collection_cfg is not None
++            and getattr(data_collection_cfg, "enabled", False)
++        )
+ 
+         self._generator = np.random.default_rng(seed=self.seed)
+         self._generator_ordered = np.random.default_rng(seed=0)
+@@ -570,8 +581,15 @@ class LiberoEnv(gym.Env):
+ 
+         if self.is_eval:
+             pool = self._eval_reset_pool
+-            if self.start_idx >= len(pool):
++            if len(pool) == 0:
+                 return np.full((num_reset_states,), -1, dtype=np.int64)
++            if self.start_idx >= len(pool):
++                # Wrap around instead of stalling: auto_reset only re-primes
++                # this pool via ``is_start`` on the first rollout epoch (see
++                # EnvWorker.evaluate), so repeated epochs (e.g. RECAP rollout
++                # collection) must keep cycling through the same fixed states
++                # rather than returning -1 forever once the pool is spent.
++                self.start_idx = 0
+             end = min(self.start_idx + num_reset_states, len(pool))
+             n_valid = end - self.start_idx
+             result = np.full((num_reset_states,), -1, dtype=np.int64)
+@@ -995,7 +1013,7 @@ class LiberoEnv(gym.Env):
+             chunk_truncations = torch.zeros_like(raw_chunk_truncations)
+             chunk_truncations[:, -1] = past_truncations
+ 
+-            if eval_count_mask is not None:
++            if eval_count_mask is not None and not self._collect_all_episodes:
+                 eval_count_mask = torch.tensor(
+                     eval_count_mask,
+                     dtype=torch.bool,
