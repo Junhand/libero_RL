@@ -46,3 +46,23 @@ index 05679da0..38755fc9 100644
                  eval_count_mask = torch.tensor(
                      eval_count_mask,
                      dtype=torch.bool,
+diff --git a/rlinf/workers/env/env_worker.py b/rlinf/workers/env/env_worker.py
+index 466e0afc..96bdd245 100644
+--- a/rlinf/workers/env/env_worker.py
++++ b/rlinf/workers/env/env_worker.py
+@@ -1298,6 +1298,15 @@ class EnvWorker(Worker):
+         for stage_id in range(self.stage_num):
+             if self.eval_enable_offload:
+                 get_env_attr(self.eval_env_list[stage_id], "offload")()
++            # Data-collection wrappers (e.g. CollectEpisode) buffer episode
++            # writes on a background thread; nothing else in this method (or
++            # its caller) ever closes the env, so without this the last
++            # in-flight writes are silently lost when the worker process
++            # exits. ``close()`` blocks until they finish. Harmless for envs
++            # that don't define it or aren't collecting data.
++            close_env = get_env_attr(self.eval_env_list[stage_id], "close")
++            if callable(close_env):
++                close_env()
+ 
+         for key, value in eval_metrics.items():
+             eval_metrics[key] = torch.cat(value, dim=0).contiguous().cpu()
