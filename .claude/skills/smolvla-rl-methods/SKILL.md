@@ -28,23 +28,27 @@ smolVLA は π0/π0.5 と同じ **flow matching（連続値のアクションを
 
 詳細な根拠・引用元・精度向上の数値は `references/comparison-table.md` を参照。要点だけ先に示す：
 
-1. **SAC-Flow**（RLinf、2025-09） — オンライン。flow policy の velocity network を再帰的
-   Transformer に置き換えて SAC で安定化。Franka 実機で30分学習の実証あり。
-2. **DSRL**（RLinf/verl-vla、2025-06, CoRL 2025） — オンライン。ベース方策を凍結し、ノイズ空間に
-   軽量 SAC アクターだけを追加学習。実機で 2/10→9/10 などの劇的な改善報告あり。
-3. **RECAP**（RLinf/verl-vla、2025-11, Physical Intelligence "π*0.6"） — オフライン。
-   **本リポジトリで既に smolVLA 対応済み**（`patches/rlinf/smolvla-recap.patch`）。rollout→
-   リターン推定→価値モデル→アドバンテージ→条件付きSFT。実機での運用を前提に設計されている。
-4. **STEAM**（RLinf、2026-06） — オフライン。RECAP の価値モデル部分の発展形（フレームペアの
-   時間的順序学習＋最悪値アンサンブル）。実機4タスク平均 +38.1pt の報告。
-5. **TD3+BC / SAC / CQL**（verl-vla） — オンライン（Critic warmup→Actor更新の反復）。
-   Actor は TD3+BC、Critic は CQL、オプションで SAC エントロピー正則化。
-   PI0.5 で 64%→80%、Gaussian Actor で 4%→96% の実測あり。
-6. **FPO**（verl-vla、2025-07 vanilla FPO） — オンライン（PPO形式）。PPO風のクリップ目的関数を
-   flow matching 方策に直接適用でき、正確な行動尤度が不要。flow-matching 前提の設計なので
-   smolVLA との相性は理論上良さそう。
-7. **Sim-Real Co-Training**（RLinf、2026-02 "Beyond Imitation"） — オンライン(sim)+オフライン(実機)。
-   シムPPO＋実機データのSFTを同時最適化。実機成功率 OpenVLA +24%、π0.5 +20% の報告。
+1. **SAC-Flow**（RLinf、2025-09） — オンライン・オフポリシー（SACベース）。flow policy の
+   velocity network を再帰的Transformerに置き換えてSACで安定化。Franka実機で30分学習の実証あり。
+2. **DSRL**（RLinf/verl-vla、2025-06, CoRL 2025） — オンライン・オフポリシー（SACベース）。
+   ベース方策を凍結し、ノイズ空間に軽量SACアクターだけを追加学習。実機で2/10→9/10などの
+   劇的な改善報告あり。
+3. **RECAP**（RLinf/verl-vla、2025-11, Physical Intelligence "π*0.6"） — オフライン
+   （方策勾配を使わないアドバンテージ条件付きSFTのため厳密なon/off-policy区分の対象外だが、
+   混合データから学ぶ点でオフポリシー的）。**本リポジトリで既にsmolVLA対応済み**
+   （`patches/rlinf/smolvla-recap.patch`）。rollout→リターン推定→価値モデル→アドバンテージ→
+   条件付きSFT。実機での運用を前提に設計されている。
+4. **STEAM**（RLinf、2026-06） — オフライン（RECAPと同じ枠組み）。RECAPの価値モデル部分の
+   発展形（フレームペアの時間的順序学習＋最悪値アンサンブル）。実機4タスク平均+38.1ptの報告。
+5. **TD3+BC / SAC / CQL**（verl-vla） — オンライン・オフポリシー（TD3/SAC/CQLいずれも
+   リプレイバッファ＋off-policy補正が前提）。Actorは TD3+BC、Criticは CQL、オプションで
+   SACエントロピー正則化。PI0.5で64%→80%、Gaussian Actorで4%→96%の実測あり。
+6. **FPO**（verl-vla、2025-07 vanilla FPO） — オンライン・**オンポリシー**（PPO由来、この
+   比較の中で唯一のオンポリシー手法。現在方策からの新規ロールアウトが前提）。PPO風のクリップ
+   目的関数をflow matching方策に直接適用でき、正確な行動尤度が不要。flow-matching前提の設計
+   なのでsmolVLAとの相性は理論上良さそう。
+7. **Sim-Real Co-Training**（RLinf、2026-02 "Beyond Imitation"） — オンライン(sim, PPOで
+   オンポリシー)+オフライン(実機, SFT)の混合。実機成功率 OpenVLA +24%、π0.5 +20% の報告。
 
 **除外**（smolVLA にアーキテクチャ的に不向き）：
 - **IQL (D4RL)** — 画像・言語を扱わない状態ベース MLP 専用
