@@ -66,10 +66,18 @@ index f14d720e..ebb58743 100644
  
      def _write_pickle(self, save_path: str, episode_data: dict) -> None:
 diff --git a/rlinf/workers/env/env_worker.py b/rlinf/workers/env/env_worker.py
-index 466e0afc..96bdd245 100644
+index 466e0afc..f293bcae 100644
 --- a/rlinf/workers/env/env_worker.py
 +++ b/rlinf/workers/env/env_worker.py
-@@ -1298,6 +1298,15 @@ class EnvWorker(Worker):
+@@ -364,6 +364,7 @@ class EnvWorker(Worker):
+                     finalize_interval=getattr(
+                         env_cfg.data_collection, "finalize_interval", 100
+                     ),
++                    resume=getattr(env_cfg.data_collection, "resume", False),
+                 )
+             env_list.append(env)
+         return env_list
+@@ -1298,6 +1299,15 @@ class EnvWorker(Worker):
          for stage_id in range(self.stage_num):
              if self.eval_enable_offload:
                  get_env_attr(self.eval_env_list[stage_id], "offload")()
