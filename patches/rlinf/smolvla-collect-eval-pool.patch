@@ -46,6 +46,25 @@ index 05679da0..38755fc9 100644
                  eval_count_mask = torch.tensor(
                      eval_count_mask,
                      dtype=torch.bool,
+diff --git a/rlinf/envs/wrappers/collect_episode.py b/rlinf/envs/wrappers/collect_episode.py
+index f14d720e..ebb58743 100644
+--- a/rlinf/envs/wrappers/collect_episode.py
++++ b/rlinf/envs/wrappers/collect_episode.py
+@@ -620,7 +620,13 @@ class CollectEpisode(gym.Wrapper):
+         self._wait_futures()
+         with self._lerobot_lock:
+             if self._lerobot_writer is not None:
+-                self._lerobot_writer.finalize()
++                # `finalize_interval` may have already finalized this writer
++                # as a periodic checkpoint (see ``_write_lerobot_episode``);
++                # when the interval lands exactly on the last episode, no
++                # further write follows to rotate it into a fresh shard, and
++                # calling ``finalize()`` again would raise.
++                if self._lerobot_writer.dataset is not None:
++                    self._lerobot_writer.finalize()
+                 self._lerobot_writer = None
+ 
+     def _write_pickle(self, save_path: str, episode_data: dict) -> None:
 diff --git a/rlinf/workers/env/env_worker.py b/rlinf/workers/env/env_worker.py
 index 466e0afc..96bdd245 100644
 --- a/rlinf/workers/env/env_worker.py
