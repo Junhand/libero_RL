@@ -4,5 +4,8 @@
 # datasets
 data/
 
+# downloaded models
+models/
+
 # temporary work files
 tmp/

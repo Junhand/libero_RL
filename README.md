@@ -281,14 +281,30 @@ bash patches/apply_rlinf_patches.sh --revert   # 元に戻す
 | RLinf SmolVLA 環境 | Step 4 の学習と評価 | 下記 |
 | pixi `lerobot-v21` / `lerobot` | データの v3.0 変換 | `pixi install -e lerobot-v21 && pixi install -e lerobot` |
 
-RLinf SmolVLA 環境は、LeRobot 0.6 系と LIBERO が入る pi0_fast 用の環境に、SmolVLA の追加依存を入れて作る。
+RLinf SmolVLA 環境は、LeRobot 0.6 系と LIBERO が入る pi0_fast 用の環境に、SmolVLA の追加依存を入れて作る。pi0_fast は Python 3.12 が必須（`--python` を省略すると既定の 3.11 系になり `lerobot[pi]` の解決に失敗する）。
 
 ```bash
 cd $ROOT/RLinf
-bash requirements/install.sh embodied --model pi0_fast --env libero --venv .venv-smolvla
+bash requirements/install.sh embodied --model pi0_fast --env libero --venv .venv-smolvla --python 3.12.11
 source .venv-smolvla/bin/activate
 uv pip install 'num2words>=0.5.14,<0.6.0'
 ```
+
+- `uv`（システムのもの）が `cu130` などの新しい CUDA バックエンドを知らないバージョンだと、torch のインストール中に `invalid value 'cu130' for '--torch-backend'` で失敗する。その場合は `curl -LsSf https://astral.sh/uv/install.sh | sh` で新しい `uv` を `~/.local/bin` に入れ、`PATH` の先頭に置いて再実行する。
+- LIBERO パッケージ（`libero.libero`）は初回 import 時にデータセット保存先をターミナルで対話的に尋ねる。非対話実行だと `EOFError` で `install.sh` の LIBERO アセット取得（`download_hf_libero_assets`）が失敗するので、先に設定ファイルを置いて無効化しておく。
+
+  ```bash
+  mkdir -p ~/.libero
+  cat > ~/.libero/config.yaml <<'EOF'
+  benchmark_root: /path/to/site-packages/libero/libero
+  bddl_files: /path/to/site-packages/libero/libero/bddl_files
+  init_states: /path/to/site-packages/libero/libero/init_files
+  datasets: /path/to/site-packages/libero/libero/../datasets
+  assets: /path/to/site-packages/libero/libero/assets
+  EOF
+  ```
+
+  （`/path/to/site-packages` は `.venv-smolvla/lib/python3.12/site-packages` に置き換える。`install.sh` は最後に `reset_libero_config` でこのファイルを実際のインストール先に上書きするので、パスが多少ずれていても構わない。）
 
 ### 3. モデル
 
@@ -314,6 +330,8 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 - 1 回の推論で得た 50 ステップの行動のうち、先頭の `num_action_chunks`（既定 10）ステップを実行する。`env.eval.max_steps_per_rollout_epoch`（520）はこの値で割り切れる必要がある。
 - 結果はターミナルの `eval/success_once` で確認する。ログは `logs/<timestamp>-libero_10_smolvla_eval/`、動画はその下の `video/eval/` に保存される。
 - 成功率が極端に高い・低いと、アドバンテージによる成功/失敗の差がほとんど出ない。その場合は smolvla_libero_plus の代わりに、少数のデモで学習させた弱い方策を使うことを検討する。
+- GPU 1 枚（46GB）では `total_num_envs=50` で `CUDA error: out of memory`（50 環境ぶんの EGL レンダリングコンテキストで VRAM を使い切る）になった。`env.eval.total_num_envs=10 env.eval.max_steps_per_rollout_epoch=2600`（520 の 5 倍）にすると、10 並列 × 5 周で同じ 50 個の初期状態を 1 周ずつ評価でき、成功率も変わらない。
+- L40S 1 枚・上記の縮小設定での実測: `success_once=0.96`（48/50）。smolvla_libero_plus は素の LIBERO-10 Task 0 でもかなり強く、上の「成功率が極端に高い」ケースに該当する可能性が高い。
 
 ### 5. rollout の収集
 
@@ -416,8 +434,6 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 
 以下はこのリポジトリの作成時に GPU・LIBERO のない環境で作ったため、まだ確認していない。
 
-- RLinf SmolVLA 環境（pi0_fast 用の環境は transformers 5.5.4 に固定）で SmolVLA が読み込めること。
-- ベースライン評価の成功率が妥当なこと。smolvla_libero_plus は LIBERO-plus のデータ（`pepijn223/libero_plus_lerobot`）で学習されている。RLinf の LIBERO 環境の観測（画像の向き、8 次元の state）は lerobot/libero と同じ形式で、RLinf の pi0_fast がこの前提で lerobot/pi0fast-libero を評価しているが、smolvla_libero_plus での成功率は未確認。
 - `libero_10_smolvla_collect.yaml` での rollout 収集が実際に動くこと。特に `data_collection` が train/eval 双方の env に共通で使えるかどうかと、`rollout_epoch` から実際に集まるエピソード数の関係。
 - Step 4 の学習が FSDP（`sharding_strategy: no_shard`）で動くこと。
 
@@ -427,3 +443,5 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 - `rlinf/data/storage/lerobot/writer.py` の修正込みで、`LeRobotDatasetWriter` が LeRobot 0.6 系（v3.0）でエピソードを書き出し、`finalize()` 後に読めること。
 - `scripts/convert_rlinf_collected_to_v21.py` が、上記の書き出しを模した複数ランク・複数エピソードのデータを 1 つの v2.1 データセットに統合し、v3.0 へ変換できること。
 - 変換後のデータに対する Step 4 のデータローダ（行動チャンクと state が元データと一致し、正のフレームの 90% に `Advantage: positive` が付くこと）。
+- RLinf SmolVLA 環境（`--python 3.12.11` が必要、pi0_fast 用の環境は transformers 5.5.4 に固定）で SmolVLA が読み込めること。GPU・uv・LIBERO 初期化まわりで詰まった箇所は「2. 環境構築」に追記した。
+- ベースライン評価（LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚）: `success_once=0.96`（48/50）。smolvla_libero_plus は LIBERO-plus のデータ（`pepijn223/libero_plus_lerobot`）で学習されているが、RLinf の LIBERO 環境（lerobot/libero と同じ観測形式）でも成功率が高く出ることを確認した。この高さにより、RECAP のアドバンテージ信号（成功/失敗の差）がほとんど出ない可能性が高い。「4. ベースライン評価」に書いた通り、少数デモで学習させた弱い方策への切り替えを検討する必要がある。
