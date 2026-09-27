@@ -247,6 +247,11 @@ RLinf は SmolVLA に対応していないので、`patches/rlinf/smolvla-recap.
 | `evaluations/libero/libero_10_smolvla_collect.yaml` | Task 0 の rollout 収集設定 |
 | `rlinf/data/storage/lerobot/writer.py` | 収集データの書き出しが LeRobot 0.4 以降（v3.0）でも完結するよう修正（3 行差分） |
 
+`patches/rlinf/smolvla-collect-eval-pool.patch`（`rlinf/envs/sim/libero/libero_env.py` のみ）は、rollout 収集（`env.eval.data_collection`）を複数 `rollout_epoch` にわたって回すと踏む、RLinf 本体（SmolVLA 固有ではない）の 2 つのバグを直す。
+
+1. eval モードの固定初期状態プールは、`auto_reset` 有効時は最初の `rollout_epoch` でしか再生成されない。使い切ると内部的に -1 を返し続け、次の `env.step()` が robosuite の `executing action in terminated episode` で落ちる。→ 使い切ったら折り返す。
+2. 同じ固定状態を 2 周目以降に訪れると、eval 側の重複カウント防止ロジックが `terminated`/`truncated` を強制的に `False` にマスクする（`success_once` の二重カウントを防ぐため）。副作用として `CollectEpisode` がそのエピソードの終端を検知できず、1 周目のぶんしか書き出されない。→ `data_collection.enabled` のときはこのマスクを適用しない。
+
 **CFG 学習を SFT で置き換える理由**: RLinf の CFG モデルは、正のアドバンテージのサンプルを `"{task}\nAdvantage: positive"` というプロンプトで条件付けし（確率 0.1 で条件を外す）、負のサンプルは常に `"{task}"` で学習する。推論時の `cfgrl_guidance_scale=1.0` では条件付きの予測だけを使う。このため、同じプロンプト規則でタスク文を書き換えた SFT と、`Advantage: positive` を付けたプロンプトでの推論で同じことができる。条件を外す確率 0.1 は、RLinf と同じくサンプルを読むたびに引き直す。
 
 ### 0. 前提
@@ -341,21 +346,27 @@ smolvla_libero 自身に Task 0 を動かさせ、成功と失敗が混ざった
 
 固定の初期状態 50 個を、`rollout_epoch` の回数だけ繰り返し回る。SmolVLA の行動生成は毎回ノイズから始まるので、同じ初期状態でも試行のたびに違う軌跡になり、成功と失敗の両方が集まる。
 
+- GPU 1 枚（46GB）では既定の `total_num_envs=50` は VRAM 不足になる（「4. ベースライン評価」と同じ理由）。`total_num_envs=10` にする場合、50 個を 1 周するのに 5 epoch かかるので、目安の周回数（82 周・2 周）は 5 倍にする。
+- 実測では、収集を試みたエピソードのうち 35〜50% 程度が書き出されない（`actions` はあるが `observations` からフレームを再構成できず捨てられるケースがあり、原因未特定）。目安件数ぴったりで止めず、多めに周回してから次段の変換で `--max-episodes` によって指定件数に切り詰める。少数epochで一度試し、`meta/info.json` の `total_episodes` を実際の歩留まりで確認してから、本番の周回数を決めるとよい。
+
 ```bash
 cd $ROOT/RLinf
 source .venv-smolvla/bin/activate
 
-# train 用（目安 4,096 episodes）: 82 周（82 * 50 = 4,100）
+# train 用（目安 4,096 episodes）: total_num_envs=10 で 50 個を1周=5epoch。
+# 歩留まり5割と見て目安の2倍(82*5*2=820epoch)から始め、実際の歩留まりを見て調整する。
 bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
   rollout.model.model_path=$MODELS/smolvla_libero \
   env.eval.data_collection.save_dir=$ROOT/collected/libero10_task0_train \
-  env.eval.rollout_epoch=82
+  env.eval.rollout_epoch=820 \
+  env.eval.total_num_envs=10
 
-# eval 用（目安 64 episodes）: 2 周（2 * 50 = 100）
+# eval 用（目安 64 episodes）: 同様に 2*5*2=20epoch から。
 bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
   rollout.model.model_path=$MODELS/smolvla_libero \
   env.eval.data_collection.save_dir=$ROOT/collected/libero10_task0_eval \
-  env.eval.rollout_epoch=2
+  env.eval.rollout_epoch=20 \
+  env.eval.total_num_envs=10
 ```
 
 集めたエピソードは、env worker のランクごとに `<save_dir>/rank_<r>/id_0/` へ LeRobot v3.0 形式（画像は PNG）で書かれる。これを LeRobot v2.1 形式（動画）の 1 つのデータセットに統合し、目安の件数に切り詰める。
@@ -436,7 +447,8 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 
 以下はこのリポジトリの作成時に GPU・LIBERO のない環境で作ったため、まだ確認していない。
 
-- `libero_10_smolvla_collect.yaml` での rollout 収集が実際に動くこと。特に `data_collection` が train/eval 双方の env に共通で使えるかどうかと、`rollout_epoch` から実際に集まるエピソード数の関係。
+- 収集したデータで実際に Step 1〜4・評価まで通し、RECAP のアドバンテージ学習に効果があること（本 README のここまでは、smolVLA 版としては未達）。
+- なぜ書き出されるエピソード数が試行数より 35〜50% 少ないのか（「5. rollout の収集」参照）。原因を特定できれば `patches/rlinf/smolvla-collect-eval-pool.patch` に追加する。
 - Step 4 の学習が FSDP（`sharding_strategy: no_shard`）で動くこと。
 
 確認済みのこと:
@@ -446,4 +458,5 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 - `scripts/convert_rlinf_collected_to_v21.py` が、上記の書き出しを模した複数ランク・複数エピソードのデータを 1 つの v2.1 データセットに統合し、v3.0 へ変換できること。
 - 変換後のデータに対する Step 4 のデータローダ（行動チャンクと state が元データと一致し、正のフレームの 90% に `Advantage: positive` が付くこと）。
 - RLinf SmolVLA 環境（`--python 3.12.11` が必要、pi0_fast 用の環境は transformers 5.5.4 に固定）で SmolVLA が読み込めること。GPU・uv・LIBERO 初期化まわりで詰まった箇所は「2. 環境構築」に追記した。
-- ベースライン評価（LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚）: `lerobot/smolvla_libero_plus` は `success_once=0.96`（48/50）と高すぎたため、`lerobot/smolvla_libero` に切り替えたところ `success_once=0.40`（20/50）と、RECAP のアドバンテージ信号（成功/失敗の差）が出やすい範囲になることを確認した。以降の手順（rollout 収集〜Step 4 学習・評価）はすべて `smolvla_libero` を前提にしている。
+- ベースライン評価(LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚): `lerobot/smolvla_libero_plus` は `success_once=0.96`(48/50)と高すぎたため、`lerobot/smolvla_libero` に切り替えたところ `success_once=0.40`(20/50)と、RECAP のアドバンテージ信号(成功/失敗の差)が出やすい範囲になることを確認した。以降の手順(rollout 収集〜Step 4 学習・評価)はすべて `smolvla_libero` を前提にしている。
+- `libero_10_smolvla_collect.yaml` での rollout 収集(L40S 1 枚、`total_num_envs=10`)が、クラッシュせず・1周目以外のデータも書き出しつつ動くこと。RLinf 本体の 2 つのバグ(`patches/rlinf/smolvla-collect-eval-pool.patch` を参照)を踏んでおり、パッチ適用前は `rollout_epoch` を増やすと必ず途中でクラッシュしていた。
