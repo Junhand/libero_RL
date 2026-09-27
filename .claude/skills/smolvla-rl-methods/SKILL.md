@@ -28,6 +28,10 @@ smolVLA は π0/π0.5 と同じ **flow matching（連続値のアクションを
 
 詳細な根拠・引用元・精度向上の数値は `references/comparison-table.md` を参照。要点だけ先に示す：
 
+**モデルベース/モデルフリー**: 比較した7手法は**すべてモデルフリー**（Dreamer/MBPOのような
+世界モデルを学習して計画に使う手法は含まれない）。RECAP/STEAMの「価値モデル」もreturn/
+アドバンテージ予測器であり、次状態を予測する遷移モデルではない点に注意。
+
 1. **SAC-Flow**（RLinf、2025-09） — オンライン・オフポリシー（SACベース）。flow policy の
    velocity network を再帰的Transformerに置き換えてSACで安定化。Franka実機で30分学習の実証あり。
 2. **DSRL**（RLinf/verl-vla、2025-06, CoRL 2025） — オンライン・オフポリシー（SACベース）。

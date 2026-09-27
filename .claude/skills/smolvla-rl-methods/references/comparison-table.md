@@ -11,15 +11,17 @@ verl-vla ([reinforcement-learning index](https://verl-vla.readthedocs.io/en/late
 OPD（OpenVLA-OFT の離散アクショントークンの log-prob 比較が前提で、smolVLA には対応する
 トークン概念がない）。
 
-| 順位（学習時間） | 手法 | 公開年（原論文） | フレームワーク | 対応モデル | 学習パラダイム | オンポリシー/オフポリシー | 核心メカニズム | 実機対応 | smolVLAへの適用見込み | 報告されている精度向上 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | **SAC-Flow** | 2025年9月（arXiv:2509.25756） | RLinf | JaxFlowTActor/FlowTActor | オンライン | オフポリシー（SACベース、リプレイバッファから学習） | velocity networkを再帰的Transformerに置き換えてSAC安定化 | ✅ Franka実機で実証（30分学習） | 🟡 velocity networkの構造適合が必要 | OGBenchで最大60%改善、HumanoidStandupでDIME比最大130%向上 |
-| 2 | **DSRL** | 2025年6月（arXiv:2506.15799、CoRL 2025） | RLinf/verl-vla | π0（RLinf）／π0.5・GR00T N1.6（verl-vla） | オンライン | オフポリシー（操舵アクターをSACでオンラインリプレイから更新） | 事前学習済みflow policyを凍結し、ノイズ空間に軽量SACを被せる | ❌ RLinf文書には記載なし（論文には実機結果あり） | 🟡 smolVLAのノイズ空間APIが必要 | 実機Pick-and-Place：2/10→9/10。π0実機：5/20→18/20 等 |
-| 3 | **RECAP** | 2025年11月（arXiv:2511.14759、Physical Intelligence「π*₀.₆」論文） | RLinf/verl-vla | π0.5（verl-vla版は+GR00T N1.6も対応） | オフライン | 方策勾配を使わないため区分外だが、混合データ（過去方策のrollout含む）から学ぶ点でオフポリシー的 | rollout→リターン推定→価値モデル→アドバンテージ→条件付きSFT | ✅ 実機想定設計・実証例あり | ✅ 本リポジトリで実施済み（`patches/rlinf/smolvla-recap.patch`） | LIBERO-10 Task 0：48.8%→66.5%（+17.7pt） |
-| 4 | **STEAM** | 2026年6月（arXiv:2606.29834） | RLinf | π0.5（価値モデルはSigLIP+Gemma3） | オフライン | RECAPと同じ枠組み（オフポリシー的） | フレームペアの時間的順序学習＋最悪値アンサンブルでアドバンテージ推定 | 🟡 未明記（RECAPに準ずると推定） | 🟡 価値モデル部分は転用しやすいが未検証 | 実機4タスク平均+38.1pt（タオル折り+59pt、チップスチェックアウト+54.3pt、ピック&プレイス+16.2pt、コーラ補充+23pt） |
-| 5 | **TD3+BC / SAC / CQL** | 各アルゴリズムは2018〜2021年発表（TD3+BC: 2021、SAC: 2018、CQL: 2020）。VLA向け組み合わせレシピ自体の単独論文は無し | verl-vla | π0.5、Gaussian Actor | オンライン（Critic warmup→Actor更新の反復） | オフポリシー（TD3/SAC/CQLいずれもリプレイバッファ＋off-policy補正が前提。正例90%/負例10%等の混在データを再利用） | TD3+BC（Actor）＋CQL（Critic）＋SACエントロピー正則化の組み合わせ | 不明 | 🟡 Gaussian Actor前提の記述もあり要確認 | PI0.5：64%→80%／Gaussian Actor：4%→96% |
-| 6 | **FPO** | 2025年7月（arXiv:2507.21053、vanilla FPO） | verl-vla | π0.5 | オンライン（PPO形式） | オンポリシー（PPO由来、現在方策からの新規ロールアウトが前提） | PPO風のクリップ目的関数をflow matching方策に直接適用、正確な行動尤度不要 | 不明 | 🟢 flow-matching前提の設計で相性良好の可能性大 | MuJoCo Playground平均：667.8→759.3（+13.7%）。ヒューマノイド制御：29.8%→54.3%等（manipulationタスクの数値は後継のFPO++論文にのみ記載） |
-| 7 | **Sim-Real Co-Training** | 2026年2月（arXiv:2602.12628「Beyond Imitation」） | RLinf | π0.5/OpenPi | オンライン(sim)+オフライン(実機) | 混合：sim側はPPOでオンポリシー、実機側はSFTでオフライン教師あり（区分外） | シムPPO＋実機データのSFTを同時最適化 | ✅ Franka実機で実証 | 🟡 PPO設計の追加実装が必要 | 実機成功率：OpenVLAで+24%、π0.5で+20%（4タスク平均） |
+| 順位（学習時間） | 手法 | 公開年（原論文） | フレームワーク | 対応モデル | 学習パラダイム | オンポリシー/オフポリシー | モデルベース/モデルフリー | 核心メカニズム | 実機対応 | smolVLAへの適用見込み | 報告されている精度向上 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | **SAC-Flow** | 2025年9月（arXiv:2509.25756） | RLinf | JaxFlowTActor/FlowTActor | オンライン | オフポリシー（SACベース、リプレイバッファから学習） | モデルフリー | velocity networkを再帰的Transformerに置き換えてSAC安定化 | ✅ Franka実機で実証（30分学習） | 🟡 velocity networkの構造適合が必要 | OGBenchで最大60%改善、HumanoidStandupでDIME比最大130%向上 |
+| 2 | **DSRL** | 2025年6月（arXiv:2506.15799、CoRL 2025） | RLinf/verl-vla | π0（RLinf）／π0.5・GR00T N1.6（verl-vla） | オンライン | オフポリシー（操舵アクターをSACでオンラインリプレイから更新） | モデルフリー | 事前学習済みflow policyを凍結し、ノイズ空間に軽量SACを被せる | ❌ RLinf文書には記載なし（論文には実機結果あり） | 🟡 smolVLAのノイズ空間APIが必要 | 実機Pick-and-Place：2/10→9/10。π0実機：5/20→18/20 等 |
+| 3 | **RECAP** | 2025年11月（arXiv:2511.14759、Physical Intelligence「π*₀.₆」論文） | RLinf/verl-vla | π0.5（verl-vla版は+GR00T N1.6も対応） | オフライン | 方策勾配を使わないため区分外だが、混合データ（過去方策のrollout含む）から学ぶ点でオフポリシー的 | モデルフリー（「価値モデル」はreturn/アドバンテージ予測器であり、次状態を予測する遷移モデルではない） | rollout→リターン推定→価値モデル→アドバンテージ→条件付きSFT | ✅ 実機想定設計・実証例あり | ✅ 本リポジトリで実施済み（`patches/rlinf/smolvla-recap.patch`） | LIBERO-10 Task 0：48.8%→66.5%（+17.7pt） |
+| 4 | **STEAM** | 2026年6月（arXiv:2606.29834） | RLinf | π0.5（価値モデルはSigLIP+Gemma3） | オフライン | RECAPと同じ枠組み（オフポリシー的） | モデルフリー（時間的順序を予測するアドバンテージ推定器であり、力学モデルではない） | フレームペアの時間的順序学習＋最悪値アンサンブルでアドバンテージ推定 | 🟡 未明記（RECAPに準ずると推定） | 🟡 価値モデル部分は転用しやすいが未検証 | 実機4タスク平均+38.1pt（タオル折り+59pt、チップスチェックアウト+54.3pt、ピック&プレイス+16.2pt、コーラ補充+23pt） |
+| 5 | **TD3+BC / SAC / CQL** | 各アルゴリズムは2018〜2021年発表（TD3+BC: 2021、SAC: 2018、CQL: 2020）。VLA向け組み合わせレシピ自体の単独論文は無し | verl-vla | π0.5、Gaussian Actor | オンライン（Critic warmup→Actor更新の反復） | オフポリシー（TD3/SAC/CQLいずれもリプレイバッファ＋off-policy補正が前提。正例90%/負例10%等の混在データを再利用） | モデルフリー | TD3+BC（Actor）＋CQL（Critic）＋SACエントロピー正則化の組み合わせ | 不明 | 🟡 Gaussian Actor前提の記述もあり要確認 | PI0.5：64%→80%／Gaussian Actor：4%→96% |
+| 6 | **FPO** | 2025年7月（arXiv:2507.21053、vanilla FPO） | verl-vla | π0.5 | オンライン（PPO形式） | オンポリシー（PPO由来、現在方策からの新規ロールアウトが前提） | モデルフリー | PPO風のクリップ目的関数をflow matching方策に直接適用、正確な行動尤度不要 | 不明 | 🟢 flow-matching前提の設計で相性良好の可能性大 | MuJoCo Playground平均：667.8→759.3（+13.7%）。ヒューマノイド制御：29.8%→54.3%等（manipulationタスクの数値は後継のFPO++論文にのみ記載） |
+| 7 | **Sim-Real Co-Training** | 2026年2月（arXiv:2602.12628「Beyond Imitation」） | RLinf | π0.5/OpenPi | オンライン(sim)+オフライン(実機) | 混合：sim側はPPOでオンポリシー、実機側はSFTでオフライン教師あり（区分外） | モデルフリー（シムは学習済み世界モデルではなく実環境の代替。Dreamer等の世界モデル手法とは異なる） | シムPPO＋実機データのSFTを同時最適化 | ✅ Franka実機で実証 | 🟡 PPO設計の追加実装が必要 | 実機成功率：OpenVLAで+24%、π0.5で+20%（4タスク平均） |
+
+**モデルベース/モデルフリーのまとめ**: 比較した7手法は**すべてモデルフリー**。環境の遷移・力学を予測する世界モデルを学習して計画に使うモデルベースRL手法（Dreamer, MBPO等）は1つも含まれない。
 
 ### TD3+BC / SAC / CQL の内訳（verl-vla 実装詳細）
 
