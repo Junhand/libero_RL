@@ -247,11 +247,12 @@ RLinf は SmolVLA に対応していないので、`patches/rlinf/smolvla-recap.
 | `evaluations/libero/libero_10_smolvla_collect.yaml` | Task 0 の rollout 収集設定 |
 | `rlinf/data/storage/lerobot/writer.py` | 収集データの書き出しが LeRobot 0.4 以降（v3.0）でも完結するよう修正（3 行差分） |
 
-`patches/rlinf/smolvla-collect-eval-pool.patch`（`rlinf/envs/sim/libero/libero_env.py` と `rlinf/workers/env/env_worker.py`）は、rollout 収集（`env.eval.data_collection`）を複数 `rollout_epoch` にわたって回すと踏む、RLinf 本体（SmolVLA 固有ではない）の 3 つのバグを直す。
+`patches/rlinf/smolvla-collect-eval-pool.patch`（`rlinf/envs/sim/libero/libero_env.py`、`rlinf/workers/env/env_worker.py`、`rlinf/envs/wrappers/collect_episode.py`）は、rollout 収集（`env.eval.data_collection`）を複数 `rollout_epoch` にわたって回すと踏む、RLinf 本体（SmolVLA 固有ではない）の 4 つのバグを直す。
 
 1. eval モードの固定初期状態プールは、`auto_reset` 有効時は最初の `rollout_epoch` でしか再生成されない。使い切ると内部的に -1 を返し続け、次の `env.step()` が robosuite の `executing action in terminated episode` で落ちる。→ 使い切ったら折り返す。
 2. 同じ固定状態を 2 周目以降に訪れると、eval 側の重複カウント防止ロジックが `terminated`/`truncated` を強制的に `False` にマスクする（`success_once` の二重カウントを防ぐため）。副作用として `CollectEpisode` がそのエピソードの終端を検知できず、1 周目のぶんしか書き出されない。→ `data_collection.enabled` のときはこのマスクを適用しない。
 3. `CollectEpisode` はエピソードの書き込みをバックグラウンドの単一スレッドにキューイングするが、`EnvWorker.evaluate()` は実行終了時に一度も `env.close()`（キュー完了待ち + データセット finalize）を呼んでいなかった。書き込み（1 件 5〜8 秒）が生成に追いつかずキューが溜まり、Ray のワーカープロセスが終了する瞬間に未処理分がまるごと消えていた。→ `evaluate()` の最後で `close()` を呼ぶよう追加。
+4. `CollectEpisode` は `finalize_interval`（既定 100 件）ごとに `writer.finalize()` を定期実行してチェックポイントを取るが、これがちょうど収集の最後のエピソードと重なると、以降の書き込みがないため新しいシャードへローテーションされない。その状態で 3 の `close()` が同じ writer にもう一度 `finalize()` を呼び、`Dataset not created. Call create() first.` で落ちる。→ 既に finalize 済み（`writer.dataset is None`）なら `close()` 側では呼び直さない。
 
 **CFG 学習を SFT で置き換える理由**: RLinf の CFG モデルは、正のアドバンテージのサンプルを `"{task}\nAdvantage: positive"` というプロンプトで条件付けし（確率 0.1 で条件を外す）、負のサンプルは常に `"{task}"` で学習する。推論時の `cfgrl_guidance_scale=1.0` では条件付きの予測だけを使う。このため、同じプロンプト規則でタスク文を書き換えた SFT と、`Advantage: positive` を付けたプロンプトでの推論で同じことができる。条件を外す確率 0.1 は、RLinf と同じくサンプルを読むたびに引き直す。
 
@@ -457,4 +458,4 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 - 変換後のデータに対する Step 4 のデータローダ（行動チャンクと state が元データと一致し、正のフレームの 90% に `Advantage: positive` が付くこと）。
 - RLinf SmolVLA 環境（`--python 3.12.11` が必要、pi0_fast 用の環境は transformers 5.5.4 に固定）で SmolVLA が読み込めること。GPU・uv・LIBERO 初期化まわりで詰まった箇所は「2. 環境構築」に追記した。
 - ベースライン評価(LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚): `lerobot/smolvla_libero_plus` は `success_once=0.96`(48/50)と高すぎたため、`lerobot/smolvla_libero` に切り替えたところ `success_once=0.40`(20/50)と、RECAP のアドバンテージ信号(成功/失敗の差)が出やすい範囲になることを確認した。以降の手順(rollout 収集〜Step 4 学習・評価)はすべて `smolvla_libero` を前提にしている。
-- `libero_10_smolvla_collect.yaml` での rollout 収集(L40S 1 枚、`total_num_envs=10`)が、クラッシュせず、試行したエピソードが（歩留まりよく）書き出されること。RLinf 本体の 3 つのバグ(`patches/rlinf/smolvla-collect-eval-pool.patch` を参照)を踏んでおり、パッチ適用前は `rollout_epoch` を増やすと必ず途中でクラッシュし、パッチの前半 2 つだけを当てた状態でも実行終了時にバックグラウンド書き込みの完了を待たずプロセスが終わるため書き出し漏れが出ていた。`total_num_envs=10, rollout_epoch=6`(60 エピソード試行)でのテストでは、修正後に 60/60 件（100%）が書き出されることを確認した。
+- `libero_10_smolvla_collect.yaml` での rollout 収集(L40S 1 枚、`total_num_envs=10`)が、クラッシュせず、試行したエピソードが漏れなく書き出されること。RLinf 本体の 4 つのバグ(`patches/rlinf/smolvla-collect-eval-pool.patch` を参照)を踏んでおり、パッチなしでは `rollout_epoch` を増やすと必ず途中でクラッシュし、`close()` 追加だけの状態では `finalize_interval`(既定 100 件)の境界とちょうど重なる周回数で別のクラッシュが起きた。`total_num_envs=10, rollout_epoch=10`(100 エピソード試行、`finalize_interval` の境界そのもの)でのテストでは、全 4 バグ修正後に 100/100 件（100%）が書き出されることを確認した。
