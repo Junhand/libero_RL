@@ -43,7 +43,13 @@ else
 fi
 
 echo "[3/3] v2.1 -> v3.0"
-(cd "$ROOT" && pixi run -e lerobot python -m lerobot.scripts.convert_dataset_v21_to_v30 \
+# Run inside .venv-smolvla itself (not the separate pixi "lerobot" env): both share
+# lerobot==0.6.1, but that env's "dataset" extra pulls datasets>=4.8, which serializes
+# parquet feature metadata with a "List" type tag that .venv-smolvla's datasets==3.6.0
+# (the actual training env, per README) can't read back ("Feature type 'List' not
+# found"). Writing with the same env that will later read it sidesteps the mismatch.
+(cd "$ROOT/RLinf" && source .venv-smolvla/bin/activate && cd "$ROOT" && \
+    python -m lerobot.scripts.convert_dataset_v21_to_v30 \
     --repo-id "local/$(basename "$DST")" --root "$DST" --push-to-hub false)
 rm -rf "${DST}_old"
 echo "done: $DST"
