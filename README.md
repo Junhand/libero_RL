@@ -223,9 +223,11 @@ bash evaluations/run_eval.sh libero libero_10_openpi_pi05_eval \
 
 ベースラインの 48.8% は `libero10_task0_train` の成功率（1,999/4,096）と一致しており、few-shot π₀.₅ のチェックポイントは公開されていない。
 
-## RECAP を smolVLA（lerobot/smolvla_libero_plus）で行う
+## RECAP を smolVLA（lerobot/smolvla_libero）で行う
 
-π₀.₅ 版と同じ 4 ステップの構成を、方策・価値モデル・学習データのすべてを smolVLA [lerobot/smolvla_libero_plus](https://huggingface.co/lerobot/smolvla_libero_plus) で行う。RECAP のアドバンテージは「データを集めた方策自身の、ふだんの行動からの改善度」なので、Step 1〜3 で使う rollout（train・eval とも）は smolVLA 自身で集め直す。π₀.₅ 版の `libero10_task0_train` / `libero10_task0_eval`（few-shot π₀.₅ が集めたデータ）はそのままでは使えない。学習と評価は RLinf で実行する。
+π₀.₅ 版と同じ 4 ステップの構成を、方策・価値モデル・学習データのすべてを smolVLA [lerobot/smolvla_libero](https://huggingface.co/lerobot/smolvla_libero) で行う。RECAP のアドバンテージは「データを集めた方策自身の、ふだんの行動からの改善度」なので、Step 1〜3 で使う rollout（train・eval とも）は smolVLA 自身で集め直す。π₀.₅ 版の `libero10_task0_train` / `libero10_task0_eval`（few-shot π₀.₅ が集めたデータ）はそのままでは使えない。学習と評価は RLinf で実行する。
+
+方策には [lerobot/smolvla_libero_plus](https://huggingface.co/lerobot/smolvla_libero_plus) ではなく `lerobot/smolvla_libero` を使う。どちらも同じ入出力仕様（state 6 次元、カメラ 3 枚、action 7 次元）で RLinf の SmolVLA アダプタからそのまま読めるが、LIBERO-10 Task 0 でのベースライン成功率を実測したところ `smolvla_libero_plus` は 0.96（48/50）と高すぎて RECAP のアドバンテージ（成功/失敗の差）がほとんど出ないため、`smolvla_libero`（0.40、20/50）の方を採用した。詳細は「4. ベースライン評価」を参照。
 
 ```
 ベースライン評価 → rollout 収集（train・eval）→ Step 1 return 計算 → Step 2 価値モデル学習
@@ -309,33 +311,33 @@ uv pip install 'num2words>=0.5.14,<0.6.0'
 ### 3. モデル
 
 ```bash
-hf download lerobot/smolvla_libero_plus --local-dir $MODELS/smolvla_libero_plus
+hf download lerobot/smolvla_libero --local-dir $MODELS/smolvla_libero
 ```
 
 SmolVLA は初回に `HuggingFaceTB/SmolVLM2-500M-Video-Instruct` の設定とトークナイザを Hub から取得する。オフラインで使う場合は取得しておき、`rollout.model.smolvla.vlm_model_name`（学習では `actor.model.smolvla.vlm_model_name`）にそのパスを指定する。
 
 ### 4. ベースライン評価
 
-学習前の smolvla_libero_plus を、LIBERO-10 の Task 0 で評価する（固定の初期状態 50 個から 1 回ずつ）。この成功率が、Step 4 の学習後と比べるベースラインになる（π₀.₅ 版の 48.8% にあたる）。
+学習前の smolvla_libero を、LIBERO-10 の Task 0 で評価する（固定の初期状態 50 個から 1 回ずつ）。この成功率が、Step 4 の学習後と比べるベースラインになる（π₀.₅ 版の 48.8% にあたる）。
 
 ```bash
 cd $ROOT/RLinf
 source .venv-smolvla/bin/activate
 bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
-  rollout.model.model_path=$MODELS/smolvla_libero_plus \
+  rollout.model.model_path=$MODELS/smolvla_libero \
   +env.eval.task_id_filter=[0] \
   env.eval.total_num_envs=50
 ```
 
 - 1 回の推論で得た 50 ステップの行動のうち、先頭の `num_action_chunks`（既定 10）ステップを実行する。`env.eval.max_steps_per_rollout_epoch`（520）はこの値で割り切れる必要がある。
 - 結果はターミナルの `eval/success_once` で確認する。ログは `logs/<timestamp>-libero_10_smolvla_eval/`、動画はその下の `video/eval/` に保存される。
-- 成功率が極端に高い・低いと、アドバンテージによる成功/失敗の差がほとんど出ない。その場合は smolvla_libero_plus の代わりに、少数のデモで学習させた弱い方策を使うことを検討する。
+- 成功率が極端に高い・低いと、アドバンテージによる成功/失敗の差がほとんど出ない。
 - GPU 1 枚（46GB）では `total_num_envs=50` で `CUDA error: out of memory`（50 環境ぶんの EGL レンダリングコンテキストで VRAM を使い切る）になった。`env.eval.total_num_envs=10 env.eval.max_steps_per_rollout_epoch=2600`（520 の 5 倍）にすると、10 並列 × 5 周で同じ 50 個の初期状態を 1 周ずつ評価でき、成功率も変わらない。
-- L40S 1 枚・上記の縮小設定での実測: `success_once=0.96`（48/50）。smolvla_libero_plus は素の LIBERO-10 Task 0 でもかなり強く、上の「成功率が極端に高い」ケースに該当する可能性が高い。
+- L40S 1 枚・上記の縮小設定での実測: `success_once=0.40`（20/50）。同条件で `lerobot/smolvla_libero_plus` を評価すると `success_once=0.96`（48/50）と高すぎたため、`smolvla_libero` を採用した（上の「RECAP を smolVLA で行う」を参照）。
 
 ### 5. rollout の収集
 
-smolvla_libero_plus 自身に Task 0 を動かさせ、成功と失敗が混ざった rollout を集める。RLinf の `CollectEpisode` ラッパー（`env.eval.data_collection`）を、`libero_10_smolvla_eval.yaml` と同じ評価の仕組みの上で使う設定 `libero_10_smolvla_collect.yaml` をパッチに含めている。
+smolvla_libero 自身に Task 0 を動かさせ、成功と失敗が混ざった rollout を集める。RLinf の `CollectEpisode` ラッパー（`env.eval.data_collection`）を、`libero_10_smolvla_eval.yaml` と同じ評価の仕組みの上で使う設定 `libero_10_smolvla_collect.yaml` をパッチに含めている。
 
 固定の初期状態 50 個を、`rollout_epoch` の回数だけ繰り返し回る。SmolVLA の行動生成は毎回ノイズから始まるので、同じ初期状態でも試行のたびに違う軌跡になり、成功と失敗の両方が集まる。
 
@@ -345,13 +347,13 @@ source .venv-smolvla/bin/activate
 
 # train 用（目安 4,096 episodes）: 82 周（82 * 50 = 4,100）
 bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
-  rollout.model.model_path=$MODELS/smolvla_libero_plus \
+  rollout.model.model_path=$MODELS/smolvla_libero \
   env.eval.data_collection.save_dir=$ROOT/collected/libero10_task0_train \
   env.eval.rollout_epoch=82
 
 # eval 用（目安 64 episodes）: 2 周（2 * 50 = 100）
 bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
-  rollout.model.model_path=$MODELS/smolvla_libero_plus \
+  rollout.model.model_path=$MODELS/smolvla_libero \
   env.eval.data_collection.save_dir=$ROOT/collected/libero10_task0_eval \
   env.eval.rollout_epoch=2
 ```
@@ -405,12 +407,12 @@ cd $ROOT
 source RLinf/.venv-smolvla/bin/activate
 bash scripts/run_rlinf_vla_sft.sh libero10_task0_recap_smolvla \
   "data.train_data_paths=[{dataset_path:$DATA/v30/libero10_task0_sft,advantages_path:$SFT/meta/advantages_$ADV_TAG.parquet,weight:1.0},{dataset_path:$DATA/v30/libero10_task0_train,advantages_path:$ROLLOUT/meta/advantages_$ADV_TAG.parquet,weight:1.0}]" \
-  actor.model.model_path=$MODELS/smolvla_libero_plus
+  actor.model.model_path=$MODELS/smolvla_libero
 ```
 
 - 主な設定（`libero10_task0_recap_smolvla.yaml`）: 30,000 ステップ、global batch 256（micro batch 32）、lr 1e-5（cosine、warmup 1,000）、float32、`unconditional_prob: 0.1`、`balance_dataset_weights: true`（sft と rollout を件数によらず 1:1 で混ぜる。RLinf の CFG 学習と同じ）。
 - sft（20fps）と rollout（10fps）は fps が違うが、どちらも 1 行が 1 制御ステップなので、行動チャンクはどちらも続く 50 行になる。
-- 正規化の統計は smolvla_libero_plus のものをそのまま使う。
+- 正規化の統計は smolvla_libero のものをそのまま使う。
 - チェックポイントは 3,000 ステップごとに `RLinf/logs/<timestamp>-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt` に保存される。
 
 ### 9. 評価
@@ -421,7 +423,7 @@ bash scripts/run_rlinf_vla_sft.sh libero10_task0_recap_smolvla \
 cd $ROOT/RLinf
 source .venv-smolvla/bin/activate
 bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
-  rollout.model.model_path=$MODELS/smolvla_libero_plus \
+  rollout.model.model_path=$MODELS/smolvla_libero \
   runner.ckpt_path=$ROOT/RLinf/logs/<timestamp>-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt \
   rollout.model.smolvla.advantage_prompt=true \
   +env.eval.task_id_filter=[0] \
@@ -444,4 +446,4 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 - `scripts/convert_rlinf_collected_to_v21.py` が、上記の書き出しを模した複数ランク・複数エピソードのデータを 1 つの v2.1 データセットに統合し、v3.0 へ変換できること。
 - 変換後のデータに対する Step 4 のデータローダ（行動チャンクと state が元データと一致し、正のフレームの 90% に `Advantage: positive` が付くこと）。
 - RLinf SmolVLA 環境（`--python 3.12.11` が必要、pi0_fast 用の環境は transformers 5.5.4 に固定）で SmolVLA が読み込めること。GPU・uv・LIBERO 初期化まわりで詰まった箇所は「2. 環境構築」に追記した。
-- ベースライン評価（LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚）: `success_once=0.96`（48/50）。smolvla_libero_plus は LIBERO-plus のデータ（`pepijn223/libero_plus_lerobot`）で学習されているが、RLinf の LIBERO 環境（lerobot/libero と同じ観測形式）でも成功率が高く出ることを確認した。この高さにより、RECAP のアドバンテージ信号（成功/失敗の差）がほとんど出ない可能性が高い。「4. ベースライン評価」に書いた通り、少数デモで学習させた弱い方策への切り替えを検討する必要がある。
+- ベースライン評価（LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚）: `lerobot/smolvla_libero_plus` は `success_once=0.96`（48/50）と高すぎたため、`lerobot/smolvla_libero` に切り替えたところ `success_once=0.40`（20/50）と、RECAP のアドバンテージ信号（成功/失敗の差）が出やすい範囲になることを確認した。以降の手順（rollout 収集〜Step 4 学習・評価）はすべて `smolvla_libero` を前提にしている。
