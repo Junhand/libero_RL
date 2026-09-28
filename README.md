@@ -286,9 +286,9 @@ bash patches/apply_rlinf_patches.sh --revert   # 元に戻す
 
 | 環境 | 用途 | 作り方 |
 |---|---|---|
-| RLinf openpi 環境 | Step 1〜3（価値モデル） | π₀.₅ 版の「1. 環境構築」と同じ |
-| RLinf SmolVLA 環境 | Step 4 の学習と評価 | 下記 |
-| pixi `lerobot-v21` / `lerobot` | データの v3.0 変換 | `pixi install -e lerobot-v21 && pixi install -e lerobot` |
+| RLinf openpi 環境 | Step 1〜3（価値モデル） | π₀.₅ 版の「1. 環境構築」と同じ（`--model openpi --env libero` で十分） |
+| RLinf SmolVLA 環境 | Step 4 の学習と評価、および v2.1→v3.0 変換 | 下記 |
+| pixi `lerobot-v21` | 収集データの統合・v2.0→v2.1 変換 | `pixi install -e lerobot-v21` |
 
 RLinf SmolVLA 環境は、LeRobot 0.6 系と LIBERO が入る pi0_fast 用の環境に、SmolVLA の追加依存を入れて作る。pi0_fast は Python 3.12 が必須（`--python` を省略すると既定の 3.11 系になり `lerobot[pi]` の解決に失敗する）。
 
@@ -383,13 +383,15 @@ pixi run -e lerobot-v21 python scripts/convert_rlinf_collected_to_v21.py \
 
 ### 6. Step 1〜3（価値モデルとアドバンテージ）
 
-π₀.₅ 版の「4. パイプライン」の Step 1〜3 を、上で集めた `$SFT`・`$ROLLOUT`・`$EVAL` に対して実行する（RLinf openpi 環境）。
+π₀.₅ 版の「4. パイプライン」の Step 1〜3 を、上で集めた `$SFT`・`$ROLLOUT`・`$EVAL` に対して実行する（RLinf openpi 環境。`--model openpi --env libero` でよく、`maniskill_libero` の ManiSkill/SAPIEN 一式は Step 1〜3 では不要）。
 
 ```bash
 export ADV_TAG=fail300_N10_q30
 ```
 
 Step 3 で各データセットの `meta/advantages_fail300_N10_q30.parquet` ができる。
+
+`run_compute_returns.sh` / `run_compute_advantages.sh` は内部で `eval $CMD` を使っており、`data.train_data_paths=[{dataset_path:...,type:sft}]` のような Hydra のリスト・オブジェクト形式のオーバーライドを渡すと、`eval` がコマンド文字列を再解釈する際に bash のブレース展開（`{a,b}` → `a b`）でカンマの位置ごとに分割されてしまい、`data.train_data_paths` の一部しか反映されない（Hydra 側のエラーメッセージに 4 通りの分割結果が出るので気づきやすい）。この形式のオーバーライドを使うときは、シェルスクリプトを介さず `compute_returns.py` / `compute_advantages.py` を直接呼ぶ（`REPO_PATH`・`OFFLINE_RL_CONFIG`・`PYTHONPATH` は各シェルスクリプトの中身を参照して自分で export する）。
 
 ### 7. データを LeRobot v3.0 に変換
 
@@ -405,7 +407,7 @@ bash scripts/convert_rlinf_to_lerobot_v30.sh $ROLLOUT $DATA/v30/libero10_task0_t
 
 1. 元データをコピーする（`data/` と `videos/` はハードリンク、`meta/` は実体をコピー）。
 2. v2.0 の場合（π₀.₅ 版のデータセットや、上で収集・統合した rollout が該当）は、LeRobot 0.3.3 の関数で v2.1 にする（`scripts/convert_rlinf_v20_to_v21.py`）。v2.0 から v2.1 への変換ツールは現在の LeRobot に含まれておらず、LeRobot 0.3.3 のものは Hub へ push する前提なので、同じ処理をローカル向けにしたもの。RLinf のデータにある文字列の `prompt` 列は統計の対象から外す。
-3. LeRobot の変換ツール `lerobot.scripts.convert_dataset_v21_to_v30` で v3.0 にする。
+3. LeRobot の変換ツール `lerobot.scripts.convert_dataset_v21_to_v30` を、`.venv-smolvla`（Step 4 の学習環境そのもの）の中で実行して v3.0 にする。`lerobot` の `dataset` extra（`training`/`smolvla` extra からも間接的に要求される）は `datasets>=4.8` を要求し、これが書き込む parquet のメタデータは `"List"` という新しい feature 型タグを使う。`.venv-smolvla` は同じ `lerobot==0.6.1` だが `datasets==3.6.0`（`"List"`型を知らない）のため、別 pixi 環境で変換すると Step 4 のデータローダが `ValueError: Feature type 'List' not found` で落ちる。書き込みと読み込みを同一環境にすることで回避する。
 
 エピソード番号とフレーム番号は変わらないので、元データの `meta/advantages_*.parquet` をそのまま使える。
 
@@ -418,13 +420,15 @@ cd $ROOT
 source RLinf/.venv-smolvla/bin/activate
 bash scripts/run_rlinf_vla_sft.sh libero10_task0_recap_smolvla \
   "data.train_data_paths=[{dataset_path:$DATA/v30/libero10_task0_sft,advantages_path:$SFT/meta/advantages_$ADV_TAG.parquet,weight:1.0},{dataset_path:$DATA/v30/libero10_task0_train,advantages_path:$ROLLOUT/meta/advantages_$ADV_TAG.parquet,weight:1.0}]" \
-  actor.model.model_path=$MODELS/smolvla_libero
+  actor.model.model_path=$MODELS/smolvla_libero \
+  actor.fsdp_config.use_orig_params=true actor.model.precision=fp32
 ```
 
 - 主な設定（`libero10_task0_recap_smolvla.yaml`）: 30,000 ステップ、global batch 256（micro batch 32）、lr 1e-5（cosine、warmup 1,000）、float32、`unconditional_prob: 0.1`、`balance_dataset_weights: true`（sft と rollout を件数によらず 1:1 で混ぜる。RLinf の CFG 学習と同じ）。
 - sft（20fps）と rollout（10fps）は fps が違うが、どちらも 1 行が 1 制御ステップなので、行動チャンクはどちらも続く 50 行になる。
 - 正規化の統計は smolvla_libero のものをそのまま使う。
 - チェックポイントは 3,000 ステップごとに `RLinf/logs/<timestamp>-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt` に保存される。
+- `actor.fsdp_config.use_orig_params=true actor.model.precision=fp32` は必須のオーバーライド。デフォルト設定（`use_orig_params: false`、精度は混在）のままだと、smolVLA モデル内で dtype（fp32/bf16）や `requires_grad`（凍結パラメータあり）が混在しているため、FSDP の `FlatParamHandle` が `ValueError: Must flatten tensors with uniform dtype` または `... uniform requires_grad` で落ちる。`use_orig_params=true` だけ、`precision=fp32` だけではどちらも直らず、両方の組み合わせで初めて 5 ステップの学習・チェックポイント保存まで通ることを確認した。
 
 ### 9. 評価
 
@@ -445,17 +449,20 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
 
 ### GPU 環境で最初に確認すること
 
-以下はこのリポジトリの作成時に GPU・LIBERO のない環境で作ったため、まだ確認していない。
-
-- 収集したデータで実際に Step 1〜4・評価まで通し、RECAP のアドバンテージ学習に効果があること（本 README のここまでは、smolVLA 版としては未達）。
-- Step 4 の学習が FSDP（`sharding_strategy: no_shard`）で動くこと。
+まだ確認していないこと:
+- **フルスケールでの Step 1〜4・評価**。以下で確認したのは eval サブセット（64 episodes）を使った小規模な実行であり、`libero10_task0_train`（目安 4,096 episodes）を使った本番規模の実行と、その結果としての `eval/success_once` の向上（RECAP のアドバンテージ学習に効果があること）はまだ確認していない。
+- rollout 収集データ（`collected/`）の生 v3.0 形式から v2.1 への変換を、目安の 4,096 episodes 規模でエラーなく完走できること（下記の OOM 修正後、900 episodes 強までは安定してメモリが増えないことを確認済みだが、最後まで通す確認はまだ）。
 
 確認済みのこと:
 - パッチの適用・解除。
 - π₀.₅ 版データセット（eval・sft サブセット）の v2 → v3.0 変換。元データが変更されないことを含む。
 - `rlinf/data/storage/lerobot/writer.py` の修正込みで、`LeRobotDatasetWriter` が LeRobot 0.6 系（v3.0）でエピソードを書き出し、`finalize()` 後に読めること。
-- `scripts/convert_rlinf_collected_to_v21.py` が、上記の書き出しを模した複数ランク・複数エピソードのデータを 1 つの v2.1 データセットに統合し、v3.0 へ変換できること。
+- `scripts/convert_rlinf_collected_to_v21.py` が、上記の書き出しを模した複数ランク・複数エピソードのデータを 1 つの v2.1 データセットに統合し、v3.0 へ変換できること。あわせて、この変換スクリプトには重大なメモリバグが 2 つあった: (1) `iter_episodes` が shard 全体（最大 20GB）を 1 つの `pd.concat` に読み込んでいた、(2) `ProcessPoolExecutor.map()` がジョブをバックプレッシャーなく全件即座に submit するため、shard 内の全エピソードの生画像バイト列がキューに乗っていた。どちらも、実データでの本番規模変換（train split, 3200+ episodes）中に host memory の OOM kill（cgroup `memory.oom_control`）としてクラッシュする形で発覚した。1 ファイル = 1 エピソードであることを確認した上での逐次読み込みと、固定サイズ window での bounded pipeline に修正済み（詳細は該当コミットを参照）。
 - 変換後のデータに対する Step 4 のデータローダ（行動チャンクと state が元データと一致し、正のフレームの 90% に `Advantage: positive` が付くこと）。
 - RLinf SmolVLA 環境（`--python 3.12.11` が必要、pi0_fast 用の環境は transformers 5.5.4 に固定）で SmolVLA が読み込めること。GPU・uv・LIBERO 初期化まわりで詰まった箇所は「2. 環境構築」に追記した。
 - ベースライン評価(LIBERO-10 Task 0、固定初期状態 50 個、L40S 1 枚): `lerobot/smolvla_libero_plus` は `success_once=0.96`(48/50)と高すぎたため、`lerobot/smolvla_libero` に切り替えたところ `success_once=0.40`(20/50)と、RECAP のアドバンテージ信号(成功/失敗の差)が出やすい範囲になることを確認した。以降の手順(rollout 収集〜Step 4 学習・評価)はすべて `smolvla_libero` を前提にしている。
 - `libero_10_smolvla_collect.yaml` での rollout 収集(L40S 1 枚、`total_num_envs=10`)が、クラッシュせず、試行したエピソードが漏れなく書き出されること。RLinf 本体の 4 つのバグ(`patches/rlinf/smolvla-collect-eval-pool.patch` を参照)を踏んでおり、パッチなしでは `rollout_epoch` を増やすと必ず途中でクラッシュし、`close()` 追加だけの状態では `finalize_interval`(既定 100 件)の境界とちょうど重なる周回数で別のクラッシュが起きた。`total_num_envs=10, rollout_epoch=10`(100 エピソード試行、`finalize_interval` の境界そのもの)でのテストでは、全 4 バグ修正後に 100/100 件（100%）が書き出されることを確認した。
+- **Step 1（return 計算）**: 実際に収集した eval・sft サブセットに対して実行し、`meta/returns_fail300.parquet` が生成されること（RLinf openpi 環境は `--model openpi --env libero` で十分。LIBERO シミュレータのアセットは Step 1〜3 では不要）。
+- **Step 2（価値モデル学習）**: SigLIP2 + Gemma3 + Critic Expert の学習ループが実際に 5 ステップ完走し（loss・grad_norm・value_spearman が各ステップで変化）、eval 側のメトリクスも出て、`checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt`（1.7GB）が保存されること。デフォルトの `actor.micro_batch_size: 32` は L40S 1 枚（46GB）だと CUDA OOM になるため、小規模確認では `micro_batch_size`/`global_batch_size` を 4 程度まで下げる必要がある。
+- **Step 3（アドバンテージ計算）**: Step 2 のチェックポイントを使い、33,280 サンプルに対して実際に GPU 推論（バッチ推論、GPU 使用率 100%）を実行し、`positive_quantile=0.3` の閾値通り正確に 30.0%（9,984/33,280）が正のアドバンテージとしてラベル付けされ、`meta/advantages_fail300_N10_q30.parquet` が保存されること。
+- **Step 4（アドバンテージ条件付き SFT）**: Step 3 で計算した本物のアドバンテージ（positive 30.0% と、smolVLA 側のデータローダのログでも一致）を使い、学習ループが実際に 5 ステップ完走し（loss・grad_norm が変化）、チェックポイントが保存されること。デフォルト設定（`actor.fsdp_config.use_orig_params: False`）では FSDP が dtype/`requires_grad` の不一致で必ず落ちるため、上の「8. Step 4」に書いた `use_orig_params=true` + `precision=fp32` の修正が必須（`libero10_task0_recap_smolvla.yaml` のデフォルト値として反映済み）。
