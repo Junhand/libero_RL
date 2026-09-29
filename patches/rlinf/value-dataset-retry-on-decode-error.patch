@@ -1,0 +1,74 @@
+diff --git a/rlinf/data/datasets/recap/value_dataset.py b/rlinf/data/datasets/recap/value_dataset.py
+index 9fa491d7..83aca187 100644
+--- a/rlinf/data/datasets/recap/value_dataset.py
++++ b/rlinf/data/datasets/recap/value_dataset.py
+@@ -234,6 +234,7 @@ class ValueDataset(Dataset):
+ 
+         self.max_samples = max_samples
+         local_path = Path(dataset_path).absolute()
++        self._dataset_path = str(local_path)
+ 
+         self.dataset_meta = LeRobotDatasetMetadata(local_path.name, root=local_path)
+         if "action" in self.dataset_meta.features:
+@@ -341,9 +342,59 @@ class ValueDataset(Dataset):
+         n = len(self._indices) if self._indices else len(self._base)
+         return min(n, self.max_samples) if self.max_samples else n
+ 
++    _MAX_LOAD_RETRIES = 5
++
++    def _describe_load_failure(self, real_idx: int) -> str:
++        """Best-effort description of the video file(s) behind a failed sample, for logging."""
++        try:
++            item = self._base.hf_dataset[real_idx]
++            ep_idx = int(item["episode_index"])
++            video_paths = [
++                str(self._base.root / self._base.meta.get_video_file_path(ep_idx, vid_key))
++                for vid_key in self._base.meta.video_keys
++            ]
++            return f"episode_index={ep_idx}, video_paths={video_paths}"
++        except Exception:
++            return "episode/video path unavailable"
++
++    def _load_base_sample(self, idx: int) -> tuple[dict[str, Any], int]:
++        """Load self._base[real_idx], retrying with the next sample on decode errors.
++
++        Video files occasionally fail to decode (corrupt frame, transient
++        filesystem glitch). Rather than crashing the whole training run on one
++        bad sample, log full details (dataset, indices, offending video path)
++        and retry with a different sample so training can continue.
++        """
++        n = len(self._indices) if self._indices else len(self._base)
++        cur_idx = idx
++        last_exc: Optional[Exception] = None
++        for attempt in range(self._MAX_LOAD_RETRIES):
++            real_idx = self._indices[cur_idx] if self._indices else cur_idx
++            try:
++                return self._base[real_idx], real_idx
++            except Exception as exc:  # noqa: BLE001 - corrupt sample, log and retry
++                last_exc = exc
++                logger.error(
++                    "ValueDataset: failed to load sample from %s "
++                    "(idx=%d, real_idx=%d, %s, attempt=%d/%d): %s",
++                    self._dataset_path,
++                    idx,
++                    real_idx,
++                    self._describe_load_failure(real_idx),
++                    attempt + 1,
++                    self._MAX_LOAD_RETRIES,
++                    exc,
++                    exc_info=True,
++                )
++                cur_idx = (cur_idx + 1) % n
++        raise RuntimeError(
++            f"ValueDataset: failed to load a valid sample after "
++            f"{self._MAX_LOAD_RETRIES} attempts starting at idx={idx} "
++            f"in dataset {self._dataset_path}"
++        ) from last_exc
++
+     def __getitem__(self, idx: int) -> dict[str, Any]:
+-        real_idx = self._indices[idx] if self._indices else idx
+-        sample = self._base[real_idx]
++        sample, real_idx = self._load_base_sample(idx)
+ 
+         ep = int(sample.get("episode_index", -1))
+         fr = int(sample.get("frame_index", -1))
