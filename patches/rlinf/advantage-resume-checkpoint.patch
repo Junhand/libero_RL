@@ -1,0 +1,184 @@
+--- a/examples/offline_rl/advantage_labeling/recap/process/compute_advantages.py
++++ b/examples/offline_rl/advantage_labeling/recap/process/compute_advantages.py
+@@ -512,6 +512,38 @@
+ 
+ 
+ @torch.no_grad()
++def _resume_state_path(resume_dir, dataset_cfg: dict) -> Path | None:
++    """Phase-1 checkpoint file for a dataset, or None when resume is disabled."""
++    if not resume_dir:
++        return None
++    name = Path(dataset_cfg.get("dataset_path", "")).name or "dataset"
++    return Path(resume_dir) / f"phase1_{name}.npz"
++
++
++def _resume_fingerprint(cfg, dataset_cfg: dict, extended_size, shard_start, ret_min, ret_max) -> str:
++    """Identifies the inputs a Phase-1 checkpoint is valid for."""
++    return json.dumps(
++        {
++            "dataset": str(dataset_cfg.get("dataset_path", "")),
++            "value_checkpoint": str(cfg.advantage.value_checkpoint),
++            "returns_tag": str(cfg.advantage.get("returns_tag", None)),
++            "extended_size": int(extended_size),
++            "shard_start": int(shard_start),
++            "ret_min": float(ret_min),
++            "ret_max": float(ret_max),
++        },
++        sort_keys=True,
++    )
++
++
++def _save_resume_state(path: Path, fingerprint: str, arrays: dict) -> None:
++    """Atomically write the Phase-1 arrays (tmp file + rename)."""
++    path.parent.mkdir(parents=True, exist_ok=True)
++    tmp = path.with_name(path.name + ".tmp.npz")
++    np.savez(tmp, fingerprint=np.array(fingerprint), **arrays)
++    os.replace(tmp, path)
++
++
+ def compute_advantages_for_dataset(
+     value_model,
+     dataset: LeRobotDataset,
+@@ -677,6 +709,45 @@
+             f"cpu_prep_in_workers={cpu_prep_in_workers}"
+         )
+ 
++    v_values = np.full(extended_size, np.nan, dtype=np.float64)
++    meta_ep_idx = np.full(extended_size, -1, dtype=np.int64)
++    meta_frame_idx = np.full(extended_size, -1, dtype=np.int64)
++    meta_return = np.full(extended_size, np.nan, dtype=np.float64)
++    meta_reward = np.full(extended_size, np.nan, dtype=np.float64)
++    filled_mask = np.zeros(extended_size, dtype=bool)
++
++    # Resume: Phase-1 results are checkpointed to ``advantage.resume_dir`` every
++    # ``advantage.checkpoint_interval_batches`` batches. A restart skips the
++    # already-inferred prefix (batches are consumed in order, shuffle=False).
++    resume_path = _resume_state_path(cfg.advantage.get("resume_dir", None), dataset_cfg)
++    resume_fp = _resume_fingerprint(
++        cfg, dataset_cfg, extended_size, shard_start, ret_min, ret_max
++    )
++    checkpoint_interval_batches = max(
++        1, int(cfg.advantage.get("checkpoint_interval_batches", 2000))
++    )
++    resume_n = 0
++    if resume_path is not None and resume_path.exists():
++        with np.load(resume_path) as st:
++            if str(st["fingerprint"]) != resume_fp:
++                raise RuntimeError(
++                    f"{resume_path} was made for different inputs; "
++                    "delete it (or change advantage.resume_dir) to start over."
++                )
++            v_values[:] = st["v_values"]
++            meta_ep_idx[:] = st["meta_ep_idx"]
++            meta_frame_idx[:] = st["meta_frame_idx"]
++            meta_return[:] = st["meta_return"]
++            meta_reward[:] = st["meta_reward"]
++            filled_mask[:] = st["filled_mask"]
++        resume_n = int(np.count_nonzero(filled_mask))
++        if not filled_mask[:resume_n].all():
++            raise RuntimeError(f"{resume_path}: filled entries are not a prefix")
++        if rank == 0:
++            logger.info(
++                f"  Resumed Phase 1 from {resume_path}: {resume_n}/{extended_size} done"
++            )
++
+     advantage_dataset = ValueInferenceDataset(
+         dataset,
+         robot_type,
+@@ -687,7 +758,9 @@
+         dataset_path=dataset_cfg.get("dataset_path"),
+     )
+     extended_indices = list(range(shard_start, extended_end))
+-    extended_dataset = torch.utils.data.Subset(advantage_dataset, extended_indices)
++    extended_dataset = torch.utils.data.Subset(
++        advantage_dataset, extended_indices[resume_n:]
++    )
+ 
+     dataloader = torch.utils.data.DataLoader(
+         extended_dataset,
+@@ -702,16 +775,10 @@
+ 
+     if rank == 0:
+         logger.info(
+-            f"Phase 1: inferring V(o_t) for {extended_size} samples in {len(dataloader)} batches"
++            f"Phase 1: inferring V(o_t) for {extended_size - resume_n} samples "
++            f"(of {extended_size}) in {len(dataloader)} batches"
+         )
+ 
+-    v_values = np.full(extended_size, np.nan, dtype=np.float64)
+-    meta_ep_idx = np.full(extended_size, -1, dtype=np.int64)
+-    meta_frame_idx = np.full(extended_size, -1, dtype=np.int64)
+-    meta_return = np.full(extended_size, np.nan, dtype=np.float64)
+-    meta_reward = np.full(extended_size, np.nan, dtype=np.float64)
+-    filled_mask = np.zeros(extended_size, dtype=bool)
+-
+     def process_value_batch(obs_list: list[dict], meta_list: list[dict]):
+         """Run GPU inference for V(o_t) and store batch results."""
+         batch_results = value_model.infer_batch(
+@@ -761,9 +828,11 @@
+             file=sys.stdout,
+         )
+     _owns_pbar = global_pbar is None
++    # Samples restored from a checkpoint are done; do not count the lookahead tail.
++    pbar.update(max(0, min(resume_n, shard_size)))
+ 
+-    dataloader_iter = iter(dataloader)
+     batch_count = len(dataloader)
++    dataloader_iter = iter(dataloader) if batch_count > 0 else None
+ 
+     def _fetch_next():
+         return next(dataloader_iter)
+@@ -799,6 +868,20 @@
+ 
+             del batch
+ 
++            if resume_path is not None and (batch_idx + 1) % checkpoint_interval_batches == 0:
++                _save_resume_state(
++                    resume_path,
++                    resume_fp,
++                    dict(
++                        v_values=v_values,
++                        meta_ep_idx=meta_ep_idx,
++                        meta_frame_idx=meta_frame_idx,
++                        meta_return=meta_return,
++                        meta_reward=meta_reward,
++                        filled_mask=filled_mask,
++                    ),
++                )
++
+     if _owns_pbar:
+         pbar.close()
+ 
+@@ -818,6 +901,20 @@
+                 f"Phase 1 incomplete: {missing_count}/{extended_size} entries were not filled."
+             )
+ 
++    if resume_path is not None and batch_count > 0:
++        _save_resume_state(
++            resume_path,
++            resume_fp,
++            dict(
++                v_values=v_values,
++                meta_ep_idx=meta_ep_idx,
++                meta_frame_idx=meta_frame_idx,
++                meta_return=meta_return,
++                meta_reward=meta_reward,
++                filled_mask=filled_mask,
++            ),
++        )
++
+     # Phase 2: compute advantages using precomputed V(o_t) values
+     for i in range(shard_size):
+         gidx = shard_start + i
+--- a/examples/offline_rl/config/recap_compute_advantages.yaml
++++ b/examples/offline_rl/config/recap_compute_advantages.yaml
+@@ -11,6 +11,9 @@
+   batch_size: 1024
+   flush_interval: 256
+   num_dataloader_workers_per_gpu: 12
++  # Phase-1 checkpoint dir (null = no resume) and its interval in batches.
++  resume_dir: null
++  checkpoint_interval_batches: 2000
+   prefetch_factor: 2
+   discount_next_value: true
+   positive_quantile: 0.3

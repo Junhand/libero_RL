@@ -31,10 +31,18 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   `RLinf/logs/value_sft/recap_value_model_sft-20260929-23:35:58/step2_value_sft/checkpoints/global_step_8000`
   最終指標: `train/value_spearman=0.946`, `train/loss=2.09`, `eval/cat_acc_best=0.287`,
   `eval/cat_acc_neighbor=0.442`。
-- **Step3（advantage 計算）**: **未完了（2026-10-01 に約 45 分走らせた時点でユーザー指示により中断、結果は未保存）**。再開は最初から。`tmp/run_step3_advantages.sh`
-  （3 データセットを **1 プロセスで一括処理**、`advantage.batch_size=16`）、ログは
-  `tmp/step3_advantages.log`、Step2 の `global_step_8000` を使用。対象は sft + **train_clean** +
-  train_extra の 2,233,605 サンプル、A5000 で約 38 samples/s、**約 16 時間**。
+- **Step3（advantage 計算）**: **実行中（2026-10-01 12:50 UTC 再起動）**。`tmp/step3_supervisor.sh`
+  が `tmp/run_step3_advantages.sh`（3 データセットを **1 プロセスで一括処理**、`batch_size=16`、
+  DataLoader workers 4）を成功するまで最大 20 回再実行する。ログは `tmp/step3_advantages.log`、
+  監督ログは `tmp/step3_supervisor.log`（`STEP3 DONE` が出れば完了）、メモリは `tmp/step3_mem.log`。
+  Step2 の `global_step_8000` を使用。対象は sft + **train_clean** + train_extra の
+  2,233,605 サンプル、A5000 で約 38 samples/s、**約 16 時間**。
+  - **途中再開**: `advantage-resume-checkpoint.patch` で Phase 1（GPU 推論）の結果を
+    `tmp/step3_state/phase1_<dataset>.npz` に 2000 バッチごとに保存し、再起動時に続きから再開する
+    （完了済みデータセットは再計算しない）。`advantage.resume_dir` が null なら無効。
+    中断再開の結果は通し実行と完全一致（差 0.0）を確認済み。**完了後は `tmp/step3_state/` を削除**。
+  - **初回実行は 3 時間 22 分で OOM**（cgroup 上限 25GB、DataLoader worker が SIGKILL）。
+    worker 12 個で長時間かけて増加したと推測（未検証）。worker を 4 に減らし、再開機能で保険をかけた。
   - 一括処理が必須: positive 閾値（上位 30%）は全データセットの advantage を結合して 1 つ決める。
     データセットごとに分けて実行すると閾値がずれる（`tmp/run_step3_full.sh` はこの理由と、
     `data.return_min` が base config に無く Hydra で落ちる理由で廃止）。return の正規化範囲
@@ -93,6 +101,10 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
     `advantage.max_samples` で件数を絞る場合は base config にないキーなので `+advantage.max_samples=N`。
     計算結果は各データセットの `meta/` に書かれるので、試し実行は `meta/` だけコピーした影
     データセット（data/videos はシンボリックリンク）で行う。
+
+11. **コンテナのメモリ上限は 25GB（cgroup v1）**。長時間の DataLoader 処理で OOM kill されうる
+    （`memory.oom_control` の `oom_kill` で確認）。`pkill -f compute_advantages.py` は自分のシェルの
+    コマンドラインにも一致して自分を落とすので、PID を指定して kill すること。
 
 ## GPU 環境の変更
 
