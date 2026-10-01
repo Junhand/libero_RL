@@ -31,7 +31,7 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   `RLinf/logs/value_sft/recap_value_model_sft-20260929-23:35:58/step2_value_sft/checkpoints/global_step_8000`
   最終指標: `train/value_spearman=0.946`, `train/loss=2.09`, `eval/cat_acc_best=0.287`,
   `eval/cat_acc_neighbor=0.442`。
-- **Step3（advantage 計算）**: **実行中（2026-10-01 05:47 JST 起動）**。`tmp/run_step3_advantages.sh`
+- **Step3（advantage 計算）**: **未完了（2026-10-01 に約 45 分走らせた時点でユーザー指示により中断、結果は未保存）**。再開は最初から。`tmp/run_step3_advantages.sh`
   （3 データセットを **1 プロセスで一括処理**、`advantage.batch_size=16`）、ログは
   `tmp/step3_advantages.log`、Step2 の `global_step_8000` を使用。対象は sft + **train_clean** +
   train_extra の 2,233,605 サンプル、A5000 で約 38 samples/s、**約 16 時間**。
