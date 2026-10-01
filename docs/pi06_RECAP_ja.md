@@ -20,7 +20,7 @@
 ## I. はじめに
 
 > 試みることを恐れなければ、人は驚くほど多くを学べる。
-> ——Robert A. Heinlein『宇宙服は着たけれど』（*Have Space Suit–Will Travel*）
+> ——Robert A. Heinlein, *Have Space Suit–Will Travel*
 
 習うより慣れろ（Practice makes perfect）。人は新しい技能を身につける柔軟性が驚くほど高いが、熟達には必ず、繰り返しの試行からの学習が必要である。視覚言語行動（VLA）モデルのような汎用ロボット基盤モデルがあれば、プロンプトによって汎用ロボットに柔軟にタスクを指定できる。しかし人と同じく、これらのモデルも、熟達するには技能を練習する必要がある。そのためには、デモンストレーションデータだけでなく、自律的に収集した経験データを活用する必要がある。そうすることで、方策は、運用中に実際に犯す失敗を修正し、人間の遠隔操作を超えて速度と頑健性を高め、新しい運用条件に適応できる。強化学習（RL）[1] として定式化された、自律的な練習による学習の基礎は、数十年前から知られているが、これらの原理を、汎用的でスケーラブルなロボット学習システムとして具体化するには、大きな課題がある。すなわち、大規模モデルに対してスケーラブルで安定した RL 手法を設計すること、異なる方策から得られる異種のデータを扱うこと、そして、報酬信号が曖昧または確率的になりうる現実世界で、報酬フィードバック付きの RL 学習をセットアップすることである。
 
@@ -316,7 +316,9 @@ $$\log \pi_\theta\!\left(a_{t:t+H}, a^\ell_{t:t+H}|o_t, \ell, \hat{\ell}\right) 
 
 これは、FPO [82] で使われる拡散の尤度の下界に類似している。これを、拡散の項と自己回帰の項に分けた、PPO 型の損失と組み合わせる。予備実験で、標準的な PPO のクリッピング目的関数を使うと、我々の設定では、アクションエキスパート（有界でない拡散ヘッドで行動をモデル化する）に信頼領域の制約を課すのが難しいと分かった。これは、数回の勾配ステップごとに実ロボットから新しいデータを収集する余裕がない、我々のアルゴリズム設定の「オフライン」の性質によるところが大きいと考えられる。学習を安定させるため、SPO [83] に倣った PPO 制約の別の定義を使うのが有効だと分かった。得られる損失は次のとおりである:
 
-$$\mathcal{L}_{\text{SPO+CoVLA}}(\theta) = \left\{ \frac{\pi_\theta(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)}{\pi_\text{ref}(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)} A^{\pi_\text{ref}}(o_t, a_t, \ell) - \frac{|A^{\pi_\text{ref}}(o_t, a_t, \ell)|}{2\epsilon_\text{ar}} \left[\frac{\pi_\theta(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)}{\pi_\text{ref}(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)} - 1\right]^2 \right\} + \alpha \left\{ \frac{\pi_\theta(a_{t:t+H}|o_t, \ell)}{\pi_\text{ref}(a_{t:t+H}|o_t, \ell)} A^{\pi_\text{ref}}(o_t, a_t, \ell) - \frac{|A^{\pi_\text{ref}}(o_t, a_t, \ell)|}{2\epsilon_\text{flow}} \left[\frac{\pi_\theta(a_{t:t+H}|o_t, \ell)}{\pi_\text{ref}(a_{t:t+H}|o_t, \ell)} - 1\right]^2 \right\}, \tag{11}$$
+$$\mathcal{L}_{\text{SPO+CoVLA}}(\theta) = \left\{ \frac{\pi_\theta(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)}{\pi_\text{ref}(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)} A^{\pi_\text{ref}}(o_t, a_t, \ell) - \frac{|A^{\pi_\text{ref}}(o_t, a_t, \ell)|}{2\epsilon_\text{ar}} \left[\frac{\pi_\theta(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)}{\pi_\text{ref}(a_{\hat{\ell} \in \hat{\ell}}|o_t, \ell)} - 1\right] \right\} + \alpha \left\{ \frac{\pi_\theta(a_{t:t+H}|o_t, \ell)}{\pi_\text{ref}(a_{t:t+H}|o_t, \ell)} A^{\pi_\text{ref}}(o_t, a_t, \ell) - \frac{|A^{\pi_\text{ref}}(o_t, a_t, \ell)|}{2\epsilon_\text{flow}} \left[\frac{\pi_\theta(a_{t:t+H}|o_t, \ell)}{\pi_\text{ref}(a_{t:t+H}|o_t, \ell)} - 1\right] \right\}, \tag{11}$$
+
+（注: 原文の式 (11) の括弧 $[\cdot]$ には 2 乗の記載がない。ここでは原文のまま掲載した。）
 
 ここで $\alpha$ はトレードオフのパラメータで、$\epsilon_\text{ar}$、$\epsilon_\text{flow}$ は、それぞれ自己回帰部分と flow matching 部分のモデルの信頼領域のパラメータである。この変種を使って、π₀.₆ のチェックポイントから出発し、評価データで学習を行う。
 
