@@ -1,0 +1,92 @@
+diff --git a/examples/offline_rl/advantage_labeling/recap/process/compute_advantages.py b/examples/offline_rl/advantage_labeling/recap/process/compute_advantages.py
+index 15e3e489..df01947a 100644
+--- a/examples/offline_rl/advantage_labeling/recap/process/compute_advantages.py
++++ b/examples/offline_rl/advantage_labeling/recap/process/compute_advantages.py
+@@ -367,6 +367,8 @@ class ValueInferenceDataset(torch.utils.data.Dataset):
+     a second forward pass.
+     """
+ 
++    _MAX_LOAD_RETRIES = 5
++
+     def __init__(
+         self,
+         lerobot_dataset: LeRobotDataset,
+@@ -375,6 +377,7 @@ class ValueInferenceDataset(torch.utils.data.Dataset):
+         input_transform=None,
+         prepare_observation_cpu=None,
+         returns_sidecar: dict[int, dict[str, np.ndarray]] | None = None,
++        dataset_path: str | None = None,
+     ):
+         self.dataset = lerobot_dataset
+         self.robot_type = robot_type
+@@ -382,12 +385,61 @@ class ValueInferenceDataset(torch.utils.data.Dataset):
+         self.input_transform = input_transform
+         self.prepare_observation_cpu = prepare_observation_cpu
+         self.returns_sidecar = returns_sidecar
++        self.dataset_path = dataset_path
+ 
+     def __len__(self):
+         return len(self.dataset)
+ 
++    def _describe_load_failure(self, idx: int) -> str:
++        """Best-effort description of the video file(s) behind a failed sample, for logging."""
++        try:
++            item = self.dataset.hf_dataset[idx]
++            ep_idx = int(to_scalar(item["episode_index"]))
++            video_paths = [
++                str(self.dataset.root / self.dataset.meta.get_video_file_path(ep_idx, vid_key))
++                for vid_key in self.dataset.meta.video_keys
++            ]
++            return f"episode_index={ep_idx}, video_paths={video_paths}"
++        except Exception:
++            return "episode/video path unavailable"
++
++    def _load_sample(self, idx: int) -> dict:
++        """Load self.dataset[idx], retrying with the next sample on decode errors.
++
++        Some videos fail to decode (corrupt frame, transient filesystem
++        glitch). Rather than crashing the whole advantage computation run on
++        one bad sample, log full details and retry with a different sample
++        so the run can continue; the failed frame simply ends up with no
++        advantage label (callers downstream tolerate missing labels).
++        """
++        n = len(self.dataset)
++        cur_idx = idx
++        last_exc: Exception | None = None
++        for attempt in range(self._MAX_LOAD_RETRIES):
++            try:
++                return self.dataset[cur_idx]
++            except Exception as exc:  # noqa: BLE001 - corrupt sample, log and retry
++                last_exc = exc
++                logger.error(
++                    "ValueInferenceDataset: failed to load sample from %s "
++                    "(idx=%d, attempt=%d/%d, %s): %s",
++                    self.dataset_path,
++                    cur_idx,
++                    attempt + 1,
++                    self._MAX_LOAD_RETRIES,
++                    self._describe_load_failure(cur_idx),
++                    exc,
++                    exc_info=True,
++                )
++                cur_idx = (cur_idx + 1) % n
++        raise RuntimeError(
++            f"ValueInferenceDataset: failed to load a valid sample after "
++            f"{self._MAX_LOAD_RETRIES} attempts starting at idx={idx} "
++            f"in dataset {self.dataset_path}"
++        ) from last_exc
++
+     def __getitem__(self, idx):
+-        sample = self.dataset[idx]
++        sample = self._load_sample(idx)
+         ep_idx = int(to_scalar(sample["episode_index"]))
+         frame_idx = int(to_scalar(sample["frame_index"]))
+ 
+@@ -632,6 +684,7 @@ def compute_advantages_for_dataset(
+         input_transform=value_model._input_transform if cpu_prep_in_workers else None,
+         prepare_observation_cpu=worker_cpu_prep if cpu_prep_in_workers else None,
+         returns_sidecar=returns_sidecar,
++        dataset_path=dataset_cfg.get("dataset_path"),
+     )
+     extended_indices = list(range(shard_start, extended_end))
+     extended_dataset = torch.utils.data.Subset(advantage_dataset, extended_indices)
