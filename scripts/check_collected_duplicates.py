@@ -71,14 +71,21 @@ def main() -> int:
         if not files:
             print(f"[WARN] {label}: no parquet files under {src}", file=sys.stderr)
         n = 0
+        bad = 0
         for f in files:
-            for ep, length, full, head in episode_hashes(f, args.decimals, args.head_steps):
+            try:
+                rows = list(episode_hashes(f, args.decimals, args.head_steps))
+            except Exception as e:  # e.g. a file truncated by a crashed collection run
+                bad += 1
+                print(f"[WARN] {label}: unreadable parquet skipped: {f.relative_to(src)} ({type(e).__name__})", file=sys.stderr)
+                continue
+            for ep, length, full, head in rows:
                 where = (label, str(f.relative_to(src)), ep, length)
                 by_full[full].append(where)
                 by_head[head].append(where)
                 n += 1
         counts[label] = n
-        print(f"{label}: {n} episodes from {len(files)} parquet file(s)")
+        print(f"{label}: {n} episodes from {len(files) - bad} parquet file(s)" + (f" ({bad} unreadable skipped)" if bad else ""))
 
     total = sum(counts.values())
     status = 0
