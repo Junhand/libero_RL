@@ -177,5 +177,5 @@ $ROOT/RLinf/.venv-smolvla/bin/python $ROOT/scripts/remove_corrupt_parquets.py $S
 ## 8. 環境 0（取りまとめ）が行うこと（参考）
 
 - 各フェーズの終了後、`scripts/check_collected_duplicates.py` で、**全環境の出力を横断して重複を検査**する（`m0=... m1=... m2=...`）。
-- 検証が済んだラウンドを、変換して PNG を消す（ディスクのクォータ 300GB のため）。変換は環境 0 だけが行う。
+- 検証が済んだラウンドを、変換する（環境ごとのデータセットに分けて、3 並列。ワーカーは 4）。**PNG は削除しない**（クォータが 600GB に引き上げられたため。ユーザーの指示があるまで、削除しない）。変換は環境 0 だけが行う。
 - 方針（`docs/data_recollection_plan.md`）と、このファイルの更新、commit。
