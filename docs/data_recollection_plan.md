@@ -20,7 +20,8 @@
 |---|---|---|
 | `env.eval.ignore_terminations` | **`False`** | 成功でエピソードを終了する。行動は 10 ステップ単位で実行するため、**打ち切りはチャンク境界**（成功後に最大 9 ステップ余分）。return の誤差は約 0.011 以内 |
 | `env.eval.data_collection.fps` | `10` | 前回と同じ（smolVLA の学習データのラベルに合わせる） |
-| `env.eval.total_num_envs` | **`5`** | コンテナのメモリ上限（25GB）のため。10 並列は Ray のメモリ監視に止められた（5 並列でピーク約 22GB） |
+| `env.eval.total_num_envs` | **`5`** | コンテナのメモリ上限（25GB）のため。10 並列は Ray のメモリ監視に止められた。**5 並列でも、実メモリのピークが約 23.2GB（スモークテストで実測）で、Ray の既定の停止閾値 23.75GB の手前 0.5GB**（1 回は超えて落ちた） |
+| 環境変数 `RAY_memory_usage_threshold` | **`0.98`**（既定 0.95） | 停止閾値を 24.5GB に上げて、余裕を 1.3GB にする。**効果は未検証**。落ちた場合は、保存済みのエピソードは有効なので、後始末（§ 4.5）をして `_t2` で再実行する |
 | `env.eval.max_episode_steps` | `520` | 前回と同じ（公式は 480） |
 | `env.eval.max_steps_per_rollout_epoch` | `520` | `num_action_chunks`（10）で割り切れること |
 | 方策 | `smolvla_libero` | ベースライン成功率 0.40 |

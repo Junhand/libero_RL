@@ -26,7 +26,7 @@
 5. **データを削除しない**（旧データ `data/`、他の環境の出力を含む）。
 6. 一時的なファイルは `tmp/`、**コマンドも `tmp/` をカレントにして実行する**ことを基本にする（ただし、収集コマンドは `RLinf/` で実行する必要があるため、例外とする）。
 7. **システムを変更する操作（apt での導入など）は、依頼者の許可を得てから行う**。
-8. 他の重い処理を、同時に動かさない（メモリ上限 25GB に対し、収集のピークは約 22GB）。
+8. 他の重い処理を、同時に動かさない（メモリ上限 25GB に対し、5 並列の収集の実メモリのピークは約 23.2GB。余裕が小さい）。
 9. 進捗の確認は、必要最小限にする（数十分おき。`tail` で最終行を見る程度）。
 
 ## 2. 手順 A: 事前チェック（フェーズに関係なく最初に必ず）
@@ -54,6 +54,7 @@ bash scripts/preflight_collect_env.sh
 ```bash
 cd /workspace/libero_RL/RLinf && source .venv-smolvla/bin/activate
 export HF_HUB_OFFLINE=1
+export RAY_memory_usage_threshold=0.98     # 既定 0.95。5 並列の実メモリのピークは約 23.2GB で、0.95（23.75GB）の余裕が小さいため
 ROOT=/workspace/libero_RL
 M=<この環境の番号>
 sleep $((M * 10))        # ログのディレクトリ名は秒単位。3 環境の同時起動による衝突を避ける
@@ -85,6 +86,7 @@ echo "exit=$?"
 ```bash
 cd /workspace/libero_RL/RLinf && source .venv-smolvla/bin/activate
 export HF_HUB_OFFLINE=1
+export RAY_memory_usage_threshold=0.98     # 既定 0.95。5 並列の実メモリのピークは約 23.2GB で、0.95（23.75GB）の余裕が小さいため
 ROOT=/workspace/libero_RL
 M=<番号>; R=<ラウンド>; PHASE=train          # eval の場合は PHASE=eval
 if [ "$PHASE" = train ]; then
@@ -155,7 +157,7 @@ $ROOT/RLinf/.venv-smolvla/bin/python $ROOT/scripts/remove_corrupt_parquets.py $S
 | `EOFError: EOF when reading a line`（`libero/__init__.py` の `input(`） | `~/.libero/config.yaml` がない | § 2 の表 |
 | `AttributeError: 'NoneType' object has no attribute 'eglQueryString'` | EGL ライブラリがない | § 2 の表（許可を得てから） |
 | `ModuleNotFoundError: No module named 'hydra'`（`Using Python at /usr/local/bin/python`） | venv の Python 本体がなく、システムの Python が使われた | `uv python install 3.12.11` |
-| `4 worker(s) were killed due to the node running low on memory` | メモリ上限（25GB）。`total_num_envs=10` にしたとき | **`total_num_envs=5` にする**（この手順書は 5） |
+| `worker(s) were killed due to the node running low on memory` | メモリ上限（25GB）。`total_num_envs=10` にしたとき、または 5 並列でもピーク（実メモリ約 23.2GB）が Ray の停止閾値を超えたとき | `total_num_envs=5` にし、**`RAY_memory_usage_threshold=0.98` を設定する**（この手順書は両方入れてある）。それでも落ちたら、§ 4.5 で後始末をして、`_t2`（seed + 5000）で再実行する。**落ちるまでに保存されたエピソードは有効**なので、削除しない |
 | ログが他の環境と混ざる | 同じ秒に起動した | `sleep $((M * 10))` を入れる（手順に含めてある） |
 | 同じ `save_dir` へ書いた | `M` を間違えた | **すぐに停止**し、依頼者に報告する。データは混ざっている可能性がある |
 | `Connection closed by peer`（gloo） | 別のエラー（OOM など）の副次的な症状 | ログの先頭側のエラーを探す |
