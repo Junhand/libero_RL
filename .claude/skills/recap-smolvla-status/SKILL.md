@@ -33,6 +33,10 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   `eval/cat_acc_neighbor=0.442`。
 - **Step3（advantage 計算）**: 未実行。次のアクション。上記 checkpoint を
   `advantage.value_checkpoint` に指定して、sft/train/train_extra の実データに対して実行する。
+  実行スクリプトは `tmp/run_step3_advantages.sh`（`advantage.batch_size=16` の明示指定が必要。下記 #10）。
+  所要時間は実測ベンチマーク（`tmp/step3_bench/`、RTX 6000 Ada）から **約 10.5 時間**
+  （計 2,234,125 サンプル ÷ 毎秒約 60 サンプル + 起動時の数分）。GPU 律速で、バッチを大きくしても
+  速くならない（16: 約 60/s、64: 約 51/s、256: 約 51/s、1024: OOM）。
 - **Step4（advantage 条件付き SFT）**: 未実行。Step3 完了後、30000 step（README/RLinf docs
   で確認済みの目標値）で実行する。
 - **Step9（評価）**: 未実行。ゴールは `eval/success_once` がベースライン 0.40 を上回ることの
@@ -71,6 +75,12 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
 9. **cgroup v1 の `memory.usage_in_bytes` は RSS ではなくキャッシュ込みの合計**: メモリ監視は
    `memory.stat` の `rss` フィールドを見ること。`usage_in_bytes` だけ見て OOM と早合点しない。
    真の OOM は `memory.oom_control` の `oom_kill` カウンタで確認する。
+10. **Step3 の `recap_compute_advantages.yaml` 既定値 `advantage.batch_size: 1024` は 48GB GPU で
+    CUDA OOM になる**（Gemma3 の SDPA で 3.78GiB の確保に失敗）。最初のバッチで即落ちる。
+    `advantage.batch_size=16` を指定すること（GPU 律速なので大きくしても速くならない）。
+    `advantage.max_samples` で件数を絞る場合は base config にないキーなので `+advantage.max_samples=N`。
+    計算結果は各データセットの `meta/` に書かれるので、試し実行は `meta/` だけコピーした影
+    データセット（data/videos はシンボリックリンク）で行う。
 
 ## 長時間学習を監視する際の注意
 
