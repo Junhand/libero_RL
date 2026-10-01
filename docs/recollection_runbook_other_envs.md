@@ -3,7 +3,7 @@
 このファイルは、**ロールアウト再収集を分担する各環境の担当（Claude Code）**が、そのまま実行するための手順書。
 背景と設計の理由は `docs/data_recollection_plan.md` にある。**迷ったら、このファイルの手順だけに従い、勝手に変更しない。**
 
-- 対象: LIBERO-10 Task 0 のロールアウト収集（成功で打ち切り、fps 10、5 並列）
+- 対象: LIBERO-10 Task 0 のロールアウト収集（成功で打ち切り、fps 10、**2 並列**。5 並列はメモリ不足で完走できなかった）
 - 3 つの環境が `/workspace`（共有）を使い、**GPU とメモリはそれぞれ別・同一仕様**（A5000 24GB、メモリ上限 25GB）
 - 状態: 手順書の初版（2026-10-01）。パッチ `smolvla-t-noise-seed.patch`（ノイズ seed）は適用済みで、seed の効き方も実測済み
 
@@ -26,7 +26,7 @@
 5. **データを削除しない**（旧データ `data/`、他の環境の出力を含む）。
 6. 一時的なファイルは `tmp/`、**コマンドも `tmp/` をカレントにして実行する**ことを基本にする（ただし、収集コマンドは `RLinf/` で実行する必要があるため、例外とする）。
 7. **システムを変更する操作（apt での導入など）は、依頼者の許可を得てから行う**。
-8. 他の重い処理を、同時に動かさない（メモリ上限 25GB に対し、5 並列の収集の実メモリのピークは約 23.2GB。余裕が小さい）。
+8. 他の重い処理を、同時に動かさない。**並列数は 2 に固定**（5 並列は、全環境で、エポック 3〜4 でメモリ上限により落ちた。実メモリが約 24GB まで増え続けたため）。
 9. 進捗の確認は、必要最小限にする（数十分おき。`tail` で最終行を見る程度）。
 
 ## 2. 手順 A: 事前チェック（フェーズに関係なく最初に必ず）
@@ -64,14 +64,14 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
   rollout.model.smolvla.noise_seed=$((800000 + M)) \
   env.eval.seed=$((300000 + M)) \
   env.eval.data_collection.save_dir=$ROOT/collected_v2/smoke/m${M} \
-  env.eval.rollout_epoch=2 env.eval.total_num_envs=5 \
+  env.eval.rollout_epoch=5 env.eval.total_num_envs=2 \
   env.eval.ignore_terminations=False env.eval.data_collection.fps=10 \
   > $ROOT/tmp/collect_smoke_m${M}.log 2>&1
 echo "exit=$?"
 ```
 
 - バックグラウンドで実行する場合は、`nohup ... & disown` にして、ログを見る（セッションに紐づけない）。
-- 約 4〜5 分で終わる。終了後、**§ 5 の報告**を書く。
+- 約 5 分で終わる（2 並列、5 エポック）。終了後、**§ 5 の報告**を書く。
 - スモークテストの結果（成功率、エピソード長、重複）は、**環境 0 が 3 環境分をまとめて検査**する。各環境は、自分の出力ができたことを報告すればよい。
 
 ## 4. 手順 C: 本番収集（`eval` または `train`）
@@ -80,8 +80,8 @@ echo "exit=$?"
 
 | フェーズ | `rollout_epoch` | `save_dir` | env の seed | ノイズの seed |
 |---|---|---|---|---|
-| `eval` | 5（約 25 エピソード） | `collected_v2/eval/m${M}` | `200000 + M` | `700000 + M` |
-| `train` | 60（約 300 エピソード） | `collected_v2/train_r${R}/m${M}` | `100000 + 100*R + M` | `600000 + 100*R + M` |
+| `eval` | 13（約 26 エピソード） | `collected_v2/eval/m${M}` | `200000 + M` | `700000 + M` |
+| `train` | 150（約 300 エピソード） | `collected_v2/train_r${R}/m${M}` | `100000 + 100*R + M` | `600000 + 100*R + M` |
 
 ```bash
 cd /workspace/libero_RL/RLinf && source .venv-smolvla/bin/activate
@@ -90,10 +90,10 @@ export RAY_memory_usage_threshold=0.98     # 既定 0.95。5 並列の実メモ�
 ROOT=/workspace/libero_RL
 M=<番号>; R=<ラウンド>; PHASE=train          # eval の場合は PHASE=eval
 if [ "$PHASE" = train ]; then
-  EPOCHS=60; SAVE=$ROOT/collected_v2/train_r${R}/m${M}
+  EPOCHS=150; SAVE=$ROOT/collected_v2/train_r${R}/m${M}
   ENV_SEED=$((100000 + 100*R + M)); NOISE_SEED=$((600000 + 100*R + M)); TAG=train_r${R}_m${M}
 else
-  EPOCHS=5;  SAVE=$ROOT/collected_v2/eval/m${M}
+  EPOCHS=13; SAVE=$ROOT/collected_v2/eval/m${M}
   ENV_SEED=$((200000 + M));         NOISE_SEED=$((700000 + M));         TAG=eval_m${M}
 fi
 [ -e "$SAVE" ] && { echo "save_dir already exists: $SAVE (do not reuse; see 'retry' below)"; exit 1; }
@@ -104,13 +104,13 @@ nohup bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
   rollout.model.smolvla.noise_seed=$NOISE_SEED \
   env.eval.seed=$ENV_SEED \
   env.eval.data_collection.save_dir=$SAVE \
-  env.eval.rollout_epoch=$EPOCHS env.eval.total_num_envs=5 \
+  env.eval.rollout_epoch=$EPOCHS env.eval.total_num_envs=2 \
   env.eval.ignore_terminations=False env.eval.data_collection.fps=10 \
   > $ROOT/tmp/collect_${TAG}.log 2>&1 &
 disown
 ```
 
-- **1 エポック約 1 分**。`train` の 1 ラウンド（60 エポック）で、約 1 時間。
+- **1 エポック約 1 分**（1 エポック = 2 エピソード前後）。`train` の 1 ラウンド（150 エポック）で、約 2.5 時間。`eval` は約 13 分。
 - 進捗: `tail -c 300 $ROOT/tmp/collect_${TAG}.log | tr '\r' '\n' | tail -2`（`Evaluating Rollout Epochs` の進捗バーが見える）。
 - 終了の判定: ログの最後に評価結果の表（`success_once` など）が出て、プロセス（`eval_embodied_agent.py`）が消える。
 - **再実行（retry）が必要になったとき**（落ちた、途中で止めた等）: **同じ seed で再実行しない**（途中までの分と同じデータができる）。`save_dir` の末尾を `_t2` にし、env の seed とノイズの seed の両方に `+5000` を足す（3 回目は `+10000`）。依頼者に報告する。
@@ -157,7 +157,7 @@ $ROOT/RLinf/.venv-smolvla/bin/python $ROOT/scripts/remove_corrupt_parquets.py $S
 | `EOFError: EOF when reading a line`（`libero/__init__.py` の `input(`） | `~/.libero/config.yaml` がない | § 2 の表 |
 | `AttributeError: 'NoneType' object has no attribute 'eglQueryString'` | EGL ライブラリがない | § 2 の表（許可を得てから） |
 | `ModuleNotFoundError: No module named 'hydra'`（`Using Python at /usr/local/bin/python`） | venv の Python 本体がなく、システムの Python が使われた | `uv python install 3.12.11` |
-| `worker(s) were killed due to the node running low on memory` | メモリ上限（25GB）。`total_num_envs=10` にしたとき、または 5 並列でもピーク（実メモリ約 23.2GB）が Ray の停止閾値を超えたとき | `total_num_envs=5` にし、**`RAY_memory_usage_threshold=0.98` を設定する**（この手順書は両方入れてある）。それでも落ちたら、§ 4.5 で後始末をして、`_t2`（seed + 5000）で再実行する。**落ちるまでに保存されたエピソードは有効**なので、削除しない |
+| `worker(s) were killed due to the node running low on memory` | 並列数が多すぎる（メモリ上限 25GB）。5 並列は、全環境でエポック 3〜4 で落ちた | **`total_num_envs=2` にする**（この手順書は 2。`RAY_memory_usage_threshold=0.98` も入れてある）。それでも落ちたら、§ 4.5 で後始末をして、`_t2`（seed + 5000）で再実行し、**私に報告する**。落ちるまでに保存されたエピソードは有効なので、削除しない |
 | ログが他の環境と混ざる | 同じ秒に起動した | `sleep $((M * 10))` を入れる（手順に含めてある） |
 | 同じ `save_dir` へ書いた | `M` を間違えた | **すぐに停止**し、依頼者に報告する。データは混ざっている可能性がある |
 | `Connection closed by peer`（gloo） | 別のエラー（OOM など）の副次的な症状 | ログの先頭側のエラーを探す |
