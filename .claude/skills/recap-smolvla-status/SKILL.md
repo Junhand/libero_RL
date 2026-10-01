@@ -33,6 +33,11 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   `eval/cat_acc_neighbor=0.442`。
 - **Step3（advantage 計算）**: 未実行。次のアクション。上記 checkpoint を
   `advantage.value_checkpoint` に指定して、sft/train/train_extra の実データに対して実行する。
+  実行スクリプトは `tmp/run_step3_advantages.sh`（`compute_advantages.py` を直接呼ぶ）。
+  **所要時間の実測（2026-10-01、RTX A5000）**: 3 データセット各先頭 8,000 サンプル（計 24,000）で
+  12 分 11 秒、**37.85 samples/s**（batch 16、GPU 100%、fetch 0ms）。本番は sft 8,005 +
+  train 1,664,000 + train_extra 562,120 = 2,234,125 サンプルなので **約 16.4 時間**。
+  （L40S では 61.7 samples/s だったので、A5000 は約 1.6 倍遅い。）
   実行スクリプトは `tmp/run_step3_advantages.sh`（`advantage.batch_size=16` の明示指定が必要。下記 #10）。
   所要時間は実測ベンチマーク（`tmp/step3_bench/`、RTX 6000 Ada）から **約 10.5 時間**
   （計 2,234,125 サンプル ÷ 毎秒約 60 サンプル + 起動時の数分）。GPU 律速で、バッチを大きくしても
@@ -69,7 +74,8 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
    サンプルにリトライするよう修正済み。**Step2（value model）用のデータセットクラスのみ
    対応済み**。Step4 の SFT 用データセットクラスで同様のクラッシュが起きた場合は、同じ
    パターンで別途パッチが必要。
-8. **`resume_dir` は Hydra で `+runner.resume_dir=...`（先頭に `+`）が必要**: 素の
+8. **base config にないキーは Hydra で先頭に `+` が必要**（`+runner.resume_dir=...`、
+   Step3 の `+advantage.max_samples=N` など）。`resume_dir` の例: 素の
    `runner.resume_dir=...` だと `Key 'resume_dir' is not in struct` エラーになる
    （base config に存在しないキーのため、追加キーとして渡す必要がある）。
 9. **cgroup v1 の `memory.usage_in_bytes` は RSS ではなくキャッシュ込みの合計**: メモリ監視は
@@ -81,6 +87,12 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
     `advantage.max_samples` で件数を絞る場合は base config にないキーなので `+advantage.max_samples=N`。
     計算結果は各データセットの `meta/` に書かれるので、試し実行は `meta/` だけコピーした影
     データセット（data/videos はシンボリックリンク）で行う。
+
+## GPU 環境の変更
+
+2026-10-01 時点の GPU は **RTX A5000（24GB）1 枚**。ベースライン評価〜Step2 は L40S（46GB）で
+実行していた。README の VRAM・速度の記述は L40S 前提なので、Step4（fp32、micro batch 32）が
+24GB に収まるかは本番前に要確認。
 
 ## 長時間学習を監視する際の注意
 
