@@ -31,18 +31,23 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   `RLinf/logs/value_sft/recap_value_model_sft-20260929-23:35:58/step2_value_sft/checkpoints/global_step_8000`
   最終指標: `train/value_spearman=0.946`, `train/loss=2.09`, `eval/cat_acc_best=0.287`,
   `eval/cat_acc_neighbor=0.442`。
-- **Step3（advantage 計算）**: 未実行。次のアクション。上記 checkpoint を
-  `advantage.value_checkpoint` に指定して、sft/train/train_extra の実データに対して実行する。
-  実行スクリプトは `tmp/run_step3_advantages.sh`（`compute_advantages.py` を直接呼ぶ）。
-  **所要時間の実測（2026-10-01、RTX A5000）**: 3 データセット各先頭 8,000 サンプル（計 24,000）で
-  12 分 11 秒、**37.85 samples/s**（batch 16、GPU 100%、fetch 0ms）。本番は sft 8,005 +
-  train 1,664,000 + train_extra 562,120 = 2,234,125 サンプルなので **約 16.4 時間**。
-  （L40S では 61.7 samples/s だったので、A5000 は約 1.6 倍遅い。）
-  実行スクリプトは `tmp/run_step3_advantages.sh`（`advantage.batch_size=16` の明示指定が必要。下記 #10）。
-  所要時間は GPU 単独使用を確認した実測ベンチマーク（`tmp/step3_bench/`、RTX 6000 Ada、batch 16）から
-  **約 11.3 時間**（sft 約 3 分 / train 約 8.4 時間 @55/s / train_extra 約 2.9 時間 @54.5/s）。
-  別セッションが出した「16.4 時間（37.85/s）」は GPU を他ジョブと共有中の計測で過大。GPU 律速で、バッチを大きくしても
-  速くならない（GPU 単独使用時の実測 16: 約 60/s、64: 約 51/s、1024: OOM。256 は別ジョブと GPU を共有していたため参考外）。
+- **Step3（advantage 計算）**: **実行中（2026-10-01 05:47 JST 起動）**。`tmp/run_step3_advantages.sh`
+  （3 データセットを **1 プロセスで一括処理**、`advantage.batch_size=16`）、ログは
+  `tmp/step3_advantages.log`、Step2 の `global_step_8000` を使用。対象は sft + **train_clean** +
+  train_extra の 2,233,605 サンプル、A5000 で約 38 samples/s、**約 16 時間**。
+  - 一括処理が必須: positive 閾値（上位 30%）は全データセットの advantage を結合して 1 つ決める。
+    データセットごとに分けて実行すると閾値がずれる（`tmp/run_step3_full.sh` はこの理由と、
+    `data.return_min` が base config に無く Hydra で落ちる理由で廃止）。return の正規化範囲
+    [-819, 0] は各 `stats.json` から自動算出されるので指定不要（Step2 と同じ値）。
+  - 途中で止めると最初からやり直し（閾値計算と保存は全処理後）。
+  - 速度は GPU 律速で、バッチを大きくしても速くならない。1024 は OOM、384 は 24GB に載らない見込み。
+    （RTX 6000 Ada 単独使用では約 55/s・約 11.3 時間の実測もあり、GPU 依存。）
+  - **`libero10_task0_train_clean`**: 壊れた episode 2599 を除いた train のコピー
+    （3199 episodes / 1,663,480 frames）。`scripts/make_clean_train_dataset.py` で作成
+    （data/videos はシンボリックリンク）。LeRobot v2.1 は episode 番号が 0..N-1 連続前提なので
+    **欠番にできず番号を詰め直している**（旧 2600→新 2599。対応表は `meta/episode_remap.json`）。
+    Step3 の advantages は clean 側の `meta/` に書かれ、Step4 もこの clean 版を使う。
+    元の `libero10_task0_train` は変更していない。
 - **Step4（advantage 条件付き SFT）**: 未実行。Step3 完了後、30000 step（README/RLinf docs
   で確認済みの目標値）で実行する。
 - **Step9（評価）**: 未実行。ゴールは `eval/success_once` がベースライン 0.40 を上回ることの
@@ -72,9 +77,9 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
    ごく一部の動画ファイルが壊れている（`ffprobe` の軽い形式チェックでは検出できない）。
    `patches/rlinf/value-dataset-retry-on-decode-error.patch` で、`ValueDataset.__getitem__`
    がデコード失敗時に詳細（dataset path・episode index・video path）をログした上で次の
-   サンプルにリトライするよう修正済み。**Step2（value model）用のデータセットクラスのみ
-   対応済み**。Step4 の SFT 用データセットクラスで同様のクラッシュが起きた場合は、同じ
-   パターンで別途パッチが必要。
+   サンプルにリトライするよう修正済み。Step2 用に加え、Step3（`compute_advantages.py`）と Step4（`SmolVLARecapDataset`、advantage 欠損フレームは
+   除外）にも `advantage-decode-error-handling.patch` で対応済み。さらに根本対策として、壊れた episode 2599 を
+   除いた `libero10_task0_train_clean` を作成した（壊れているのは 2599 のみ）。
 8. **base config にないキーは Hydra で先頭に `+` が必要**（`+runner.resume_dir=...`、
    Step3 の `+advantage.max_samples=N` など）。`resume_dir` の例: 素の
    `runner.resume_dir=...` だと `Key 'resume_dir' is not in struct` エラーになる
