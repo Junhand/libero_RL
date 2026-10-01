@@ -91,7 +91,10 @@ done
 echo "8) RLinf working tree (shared, so it is identical everywhere; stacked patches cannot be checked one by one)"
 if [ -f "$ROOT/RLinf/rlinf/models/embodiment/smolvla/smolvla_action_model.py" ]; then ok "smolvla adapter present"; else bad "smolvla adapter missing -> bash patches/apply_rlinf_patches.sh"; fi
 if grep -q "_collect_all_episodes" "$ROOT/RLinf/rlinf/envs/sim/libero/libero_env.py" 2>/dev/null; then ok "collect-eval-pool patch present"; else bad "collect-eval-pool patch missing -> bash patches/apply_rlinf_patches.sh"; fi
-echo "  tree fingerprint: $(git -C "$ROOT/RLinf" diff | sha1sum | cut -c1-12)   (must be equal on all environments)"
+if grep -q "noise_seed" "$ROOT/RLinf/rlinf/models/embodiment/smolvla/smolvla_action_model.py" 2>/dev/null; then ok "noise-seed patch present"; else bad "noise-seed patch missing -> bash patches/apply_rlinf_patches.sh"; fi
+# Fingerprint = hash of the contents of every file the patches touch (git diff would miss patch-created files).
+fp=$(grep -h '^+++ b/' "$ROOT"/patches/rlinf/*.patch | sed 's#^+++ b/##' | sort -u | while read -r f; do sha1sum "$ROOT/RLinf/$f" 2>/dev/null; done | sed "s#$ROOT/RLinf/##" | sha1sum | cut -c1-12)
+echo "  patch-state fingerprint: $fp   (must be equal on all environments)"
 
 echo "9) shared filesystem"
 df -h "$ROOT" | tail -1 | awk '{print "  fs: "$1"  use "$5}'

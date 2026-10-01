@@ -9,6 +9,7 @@ models/
 
 # rollout collection output (RECAP smolVLA step 5)
 collected/
+collected_v2/
 
 # temporary work files
 tmp/

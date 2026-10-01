@@ -1,0 +1,78 @@
+--- a/rlinf/models/embodiment/smolvla/__init__.py
++++ b/rlinf/models/embodiment/smolvla/__init__.py
+@@ -150,6 +150,7 @@
+             ADVANTAGE_PROMPT_SUFFIX if model_cfg.get("advantage_prompt", False) else ""
+         ),
+         image_size=model_cfg.get("image_size", None),
++        noise_seed=model_cfg.get("noise_seed", None),
+         preprocessor=_load_processor(model_path, "pre", pre_overrides),
+         postprocessor=_load_processor(model_path, "post", {}),
+     )
+--- a/rlinf/models/embodiment/smolvla/smolvla_action_model.py
++++ b/rlinf/models/embodiment/smolvla/smolvla_action_model.py
+@@ -48,6 +48,7 @@
+         num_action_chunks: int,
+         prompt_suffix: str = "",
+         image_size: int | None = None,
++        noise_seed: int | None = None,
+         preprocessor: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+         postprocessor: Callable[[torch.Tensor], torch.Tensor] | None = None,
+     ) -> None:
+@@ -57,6 +58,11 @@
+         self.num_action_chunks = int(num_action_chunks)
+         self.prompt_suffix = prompt_suffix
+         self.image_size = image_size
++        # Seed of the flow-matching noise (None keeps lerobot's global RNG). The generator is
++        # created lazily on the policy device and persists across calls, so repeated calls
++        # never reuse the same noise, while two runs with different seeds never share it.
++        self.noise_seed = None if noise_seed is None else int(noise_seed)
++        self._noise_generator: torch.Generator | None = None
+         self.preprocessor = preprocessor
+         self.postprocessor = postprocessor
+ 
+@@ -75,6 +81,23 @@
+             prepared[key] = value
+         return prepared
+ 
++    def _sample_noise(self, batch: dict[str, Any]) -> torch.Tensor | None:
++        """Standard-normal x_1 noise for the whole batch from the seeded generator."""
++        if self.noise_seed is None:
++            return None
++        device = next(self.parameters()).device
++        if self._noise_generator is None:
++            self._noise_generator = torch.Generator(device=device)
++            self._noise_generator.manual_seed(self.noise_seed)
++        batch_size = next(v.shape[0] for v in batch.values() if torch.is_tensor(v))
++        config = self.policy.config
++        return torch.randn(
++            (batch_size, config.chunk_size, config.max_action_dim),
++            generator=self._noise_generator,
++            device=device,
++            dtype=torch.float32,
++        )
++
+     def predict_action_batch(
+         self,
+         env_obs: dict[str, Any],
+@@ -98,7 +121,7 @@
+             batch["task"] = [task + self.prompt_suffix for task in batch["task"]]
+         batch = self._prepare_lerobot_batch(batch)
+ 
+-        actions = self.policy.predict_action_chunk(batch)
++        actions = self.policy.predict_action_chunk(batch, noise=self._sample_noise(batch))
+         actions = actions[:, : self.num_action_chunks, : self.action_dim]
+         actions = actions.float().cpu()
+         if self.postprocessor is not None:
+--- a/examples/embodiment/config/model/smolvla.yaml
++++ b/examples/embodiment/config/model/smolvla.yaml
+@@ -22,6 +22,10 @@
+   # Local path to HuggingFaceTB/SmolVLM2-500M-Video-Instruct (config, processor,
+   # tokenizer) for offline use; null downloads it from the Hub.
+   vlm_model_name: null
++  # Seed of the flow-matching noise used at inference (null = unseeded, lerobot's global RNG).
++  # Set a distinct value per collection process: identical env seed + identical noise seed
++  # reproduce identical rollouts.
++  noise_seed: null
+   # Action horizon used to build SFT targets (checkpoint chunk_size).
+   chunk_size: 50
+   # RLinf env / dataset image keys -> checkpoint camera keys.

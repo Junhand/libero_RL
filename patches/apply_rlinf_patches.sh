@@ -40,11 +40,22 @@ if [ "$mode" = "revert" ]; then
     exit 0
 fi
 
+unclear=()
 for p in "${patches[@]}"; do
     if git -C "$RLINF_DIR" apply --reverse --check "$p" 2>/dev/null; then
         echo "already applied, skipped: $(basename "$p")"
-    else
+    elif git -C "$RLINF_DIR" apply --check "$p" 2>/dev/null; then
         git -C "$RLINF_DIR" apply "$p"
         echo "applied: $(basename "$p")"
+    else
+        # Neither direction applies: normally because a LATER patch in this directory changes the same
+        # lines (stacked patches), i.e. this one is already part of the tree. On a fresh checkout every
+        # patch applies in order, so this only happens when re-running on a patched tree.
+        echo "skipped (superseded by a later patch, or conflict): $(basename "$p")"
+        unclear+=("$(basename "$p")")
     fi
 done
+if [ "${#unclear[@]}" -gt 0 ]; then
+    echo "note: ${#unclear[@]} patch(es) could be neither applied nor reverted: ${unclear[*]}" >&2
+    echo "      expected for stacked patches on an already patched tree; on a fresh RLinf checkout this means a conflict." >&2
+fi
