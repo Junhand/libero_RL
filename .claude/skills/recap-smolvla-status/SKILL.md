@@ -36,7 +36,7 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   実行スクリプトは `tmp/run_step3_advantages.sh`（`advantage.batch_size=16` の明示指定が必要。下記 #10）。
   所要時間は実測ベンチマーク（`tmp/step3_bench/`、RTX 6000 Ada）から **約 10.5 時間**
   （計 2,234,125 サンプル ÷ 毎秒約 60 サンプル + 起動時の数分）。GPU 律速で、バッチを大きくしても
-  速くならない（16: 約 60/s、64: 約 51/s、256: 約 51/s、1024: OOM）。
+  速くならない（GPU 単独使用時の実測 16: 約 60/s、64: 約 51/s、1024: OOM。256 は別ジョブと GPU を共有していたため参考外）。
 - **Step4（advantage 条件付き SFT）**: 未実行。Step3 完了後、30000 step（README/RLinf docs
   で確認済みの目標値）で実行する。
 - **Step9（評価）**: 未実行。ゴールは `eval/success_once` がベースライン 0.40 を上回ることの
