@@ -93,6 +93,8 @@ seed は **(分割, ラウンド, 環境番号 m)** ごとに一意にする。2
 - 落ちたラウンドは、保存先を残したまま、`_t2`（seed + 5000）で再実行する。重複検査（`check_collected_duplicates.py`）は、壊れたファイルを警告して飛ばす。
 
 ### 5.3 変換
+- **変換スクリプトの不具合を修正済み**: 成功で打ち切ると、短いエピソードが、1 つの parquet ファイルに**複数**詰め込まれる（実測: 1 ファイルに 260 と 270 の 2 エピソード）。修正前の `convert_rlinf_collected_to_v21.py` は「1 ファイル = 1 エピソード」と仮定して、**複数のエピソードを 1 つに結合していた**（8 エピソードが 6 になり、return も誤る）。`episode_index` で分けるように直し、`m0` で、8 エピソード・長さ一致を確認した。
+- この環境（コンテナ）には `pixi` コマンドがない場合がある。その場合は、`.pixi/envs/lerobot-v21/bin/python scripts/convert_rlinf_collected_to_v21.py ...` を直接呼ぶ。
 - `convert_rlinf_collected_to_v21.py` は、`<src>/rank_*/id_*` の形式を読む。3 環境の出力を、**ランク番号をずらしたシンボリックリンクで 1 つの `--src` にまとめる**（`rank_0`＝環境 0、`rank_1`＝環境 1、`rank_2`＝環境 2）。
 - 変換は、`pixi run -e lerobot-v21 python scripts/convert_rlinf_collected_to_v21.py --src <まとめた dir> --dst <データセット> --max-episodes N`。
 

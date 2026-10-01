@@ -56,8 +56,10 @@ def decode_image(value) -> np.ndarray:
 def iter_episodes(shard: Path):
     """Yield (task, frames DataFrame) per episode of one v3.0 shard, in episode order.
 
-    Each data file holds exactly one episode's frames (verified against RLinf's
-    CollectEpisode output), so files are read and yielded one at a time instead of
+    A data file holds one episode when episodes run to the step limit, but SEVERAL episodes
+    when they end early (success termination): the LeRobot writer packs consecutive short
+    episodes into one file up to its size limit. Files are therefore split by ``episode_index``.
+    Files are read and yielded one at a time instead of
     concatenating the whole shard into one DataFrame first -- a 300-episode/20GB shard
     held entirely in memory (as decoded PNG-bytes columns, ~2x the on-disk size) was
     the main driver of the OOM kill (cgroup memory.oom_control) seen converting the
@@ -68,8 +70,10 @@ def iter_episodes(shard: Path):
 
     files = sorted(shard.glob("data/chunk-*/file-*.parquet"), key=lambda p: int(p.stem.split("-")[-1]))
     for f in files:
-        ep = pq.read_table(f).to_pandas().sort_values("frame_index")
-        yield task_by_index[int(ep["task_index"].iloc[0])], ep
+        table = pq.read_table(f).to_pandas()
+        for _, ep in table.groupby("episode_index", sort=True):
+            ep = ep.sort_values("frame_index")
+            yield task_by_index[int(ep["task_index"].iloc[0])], ep
 
 
 def _decode_episode(args: tuple[str, list, list, list, list, list]) -> dict:
