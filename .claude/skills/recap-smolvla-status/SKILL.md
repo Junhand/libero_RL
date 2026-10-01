@@ -39,8 +39,9 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   train 1,664,000 + train_extra 562,120 = 2,234,125 サンプルなので **約 16.4 時間**。
   （L40S では 61.7 samples/s だったので、A5000 は約 1.6 倍遅い。）
   実行スクリプトは `tmp/run_step3_advantages.sh`（`advantage.batch_size=16` の明示指定が必要。下記 #10）。
-  所要時間は実測ベンチマーク（`tmp/step3_bench/`、RTX 6000 Ada）から **約 10.5 時間**
-  （計 2,234,125 サンプル ÷ 毎秒約 60 サンプル + 起動時の数分）。GPU 律速で、バッチを大きくしても
+  所要時間は GPU 単独使用を確認した実測ベンチマーク（`tmp/step3_bench/`、RTX 6000 Ada、batch 16）から
+  **約 11.3 時間**（sft 約 3 分 / train 約 8.4 時間 @55/s / train_extra 約 2.9 時間 @54.5/s）。
+  別セッションが出した「16.4 時間（37.85/s）」は GPU を他ジョブと共有中の計測で過大。GPU 律速で、バッチを大きくしても
   速くならない（GPU 単独使用時の実測 16: 約 60/s、64: 約 51/s、1024: OOM。256 は別ジョブと GPU を共有していたため参考外）。
 - **Step4（advantage 条件付き SFT）**: 未実行。Step3 完了後、30000 step（README/RLinf docs
   で確認済みの目標値）で実行する。
