@@ -71,7 +71,7 @@ seed は **(分割, ラウンド, 環境番号 m)** ごとに一意にする。2
 | 所要時間（1 環境） | 約 4.5 時間（1 エポック 59 秒 × 275）。3 環境の並列で、全体も約 4.5 時間 |
 
 - 成功で打ち切るため、エピソードの平均長が短くなり、エポックあたりの収量が変わる。**実収量は、スモークテストで測り直す**。
-- 3 環境の GPU とメモリの仕様が同じと仮定している（A5000 24GB、メモリ上限 25GB）。違う場合は、`total_num_envs` を調整する。
+- 3 環境の GPU とメモリは同じ（ユーザー確認済み。A5000 24GB、メモリ上限 25GB）。
 
 ## 5. ディスクと保存先
 
@@ -101,8 +101,39 @@ seed は **(分割, ラウンド, 環境番号 m)** ごとに一意にする。2
 - 環境間、ラウンド間、環境内で、**同一ハッシュが 1 つもない**ことを確認する。
 - 前回のデータ（`train`、`train_extra`）とも、重複しないことを確認する。
 
+## 6.5 同じ Python 環境（`.venv-smolvla`）を 3 環境で使う場合の確認
+
+`/workspace` は共有だが、`/root`、`/tmp`、システムのライブラリ（apt）、GPU は**環境ごと**に別。venv 本体（パッケージ）は `/workspace` にあるので共有できるが、**venv の外にある依存**が、各環境で揃っている必要がある。
+
+### 共有されるもの（全環境で同一）
+`RLinf/.venv-smolvla` のパッケージ、`RLinf` のソースとパッチ、`models/`、`data/`、`HF_HOME`（この環境では `/workspace/.cache/huggingface/` に設定されている）。venv の `activate` と、スクリプトの shebang のパスも `/workspace` 内で、環境間で同じ。
+
+### 環境ごとに用意が必要なもの（今日、この環境で、それぞれ別のエラーになった）
+| 依存 | 場所 | 欠けたときの症状 | 対処 |
+|---|---|---|---|
+| venv の Python 本体 | `.venv-smolvla/bin/python` が `/root/.local/share/uv/python/...` へのリンク | `python` が起動しない（`No module named hydra` など、別の Python が使われる） | `uv python install 3.12.11` |
+| LIBERO の設定 | `~/.libero/config.yaml` | `import libero` が対話入力を待ち、`EOFError` で収集が落ちる | `echo n \| .venv-smolvla/bin/python -c 'import libero.libero'` |
+| EGL ライブラリ | システムの `libEGL.so.1`、`libOpenGL.so.0` | シミュレータの描画の初期化で `AttributeError: 'NoneType' object has no attribute 'eglQueryString'` | `libegl1`、`libopengl0` を apt で導入（システムの変更なので、導入の可否は事前に確認する） |
+| メモリ上限 | cgroup（25GB） | 5 並列でピーク約 22GB。上限に近づくと Ray が worker を落とす | 環境が同じなので問題ない想定。`total_num_envs=5` |
+
+これらは、**各環境で事前チェックスクリプトを実行して確認**する: `bash scripts/preflight_collect_env.sh`。読み取りのみで、何もインストールしない。確認する項目は、Python 本体、パッケージの import と CUDA、LIBERO の設定、EGL、HF の参照先、メモリ上限、残った Ray、RLinf のツリー、`/workspace` の書き込みである。この環境で、通常系と異常系（`~/.libero` がない場合）の両方で動作を確認した。
+
+### 共有ファイルシステム上で、同時に動かすときの注意（コードで確認した事実）
+| 項目 | 内容 | 対策 |
+|---|---|---|
+| ログのディレクトリ | `run_eval.sh` が `RLinf/logs/$(date +'%Y%m%d-%H:%M:%S')-<config>` を作る。**秒単位**なので、3 環境を同じ秒に起動すると、**同じログディレクトリに混ざる** | 環境ごとに起動を 10 秒以上ずらす。標準出力は、環境ごとの別ファイルにリダイレクトする（`tmp/collect_m${M}.log`） |
+| 出力先 | 全環境が rank 0 のため、同じ `save_dir` だと `rank_0/id_0` が衝突する | 環境ごとに別の `save_dir`（§ 5.1） |
+| Hub へのアクセス | SmolVLM2 の設定とトークナイザを、`vlm_model_name: null` だと Hub から取得する（収集のログに Hub への要求が出ていた） | `rollout.model.smolvla.vlm_model_name=$ROOT/models/SmolVLM2-500M-Video-Instruct` を指定し、`HF_HUB_OFFLINE=1` にする。`models/` に実体がある |
+| Ray | 各環境が、自分のローカルな Ray を起動する。起動時に `address="auto"` で既存のクラスタを探すが、`/tmp` が環境ごとなので、**他環境の Ray には接続しない**。ただし、**同じ環境に残った Ray**には接続しうる | 起動前に `ray stop --force`（自分のものだけ）。`RAY_ADDRESS`、`RLINF_NODE_RANK` は未設定にする |
+| Hydra | `hydra.run.dir: .`、`output_subdir: null` で、出力ファイルを作らない | 問題なし |
+| RLinf のツリー | 共有なので、パッチは 1 回適用すれば全環境に反映される | 事前チェックが、ツリーの指紋（`git diff` のハッシュ）を表示するので、**3 環境で一致することを確認** |
+| `__pycache__` | 複数環境が同じ `.venv` の `__pycache__` に書く可能性がある | 内容が同じなので、実害は小さいと考える（未検証） |
+
+**未検証**: 3 つの環境が、実際に同時に収集を動かしたときの挙動は、ここ（1 環境）からは確認できない。§ 7 のスモークテスト（3 環境で同時に実行）が、その検証になる。
+
 ## 7. 実施手順
 
+0. **各環境で事前チェック**: `bash scripts/preflight_collect_env.sh`。`PASSED` になるまで直す（§ 6.5）。ツリーの指紋が 3 環境で一致することも確認する。
 1. **P1、P2 を実装**して commit する（`patches/apply_rlinf_patches.sh` で、3 環境の RLinf に同じパッチを適用する。`/workspace` が共有なので、1 回の適用で全環境に反映される想定。ただし、`.venv-smolvla` の整合は、各環境で確認する）。
 2. **スモークテスト**（3 環境で同時に、各 2 エポック、eval の seed 族で）。確認すること:
    - 各環境が、メモリ上限内で完走する。
@@ -114,6 +145,24 @@ seed は **(分割, ラウンド, 環境番号 m)** ごとに一意にする。2
 5. 全ラウンド後に、データセット全体で、成功率、エピソード長の分布、重複の有無を最終確認する。
 6. **旧データ（`train`、`train_extra`、`train_clean`、`eval`）は、新データの検証が終わるまで削除しない。**
 
+### 起動コマンドの雛形（環境 `M` = 0, 1, 2、ラウンド `R`）
+
+```bash
+cd $ROOT/RLinf && source .venv-smolvla/bin/activate
+export HF_HUB_OFFLINE=1
+M=0; R=1                                  # 環境ごとに M を変える
+sleep $((M * 10))                         # ログのディレクトリ名（秒単位）の衝突を避ける
+bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
+  rollout.model.model_path=$ROOT/models/smolvla_libero \
+  rollout.model.smolvla.vlm_model_name=$ROOT/models/SmolVLM2-500M-Video-Instruct \
+  env.eval.data_collection.save_dir=$ROOT/collected_v2/train_r${R}/m${M} \
+  env.eval.rollout_epoch=60 env.eval.total_num_envs=5 \
+  env.eval.ignore_terminations=False env.eval.data_collection.fps=10 \
+  env.eval.seed=$((100000 + 100*R + M)) \
+  rollout.model.smolvla.noise_seed=$((600000 + 100*R + M)) \   # P1 の実装後
+  > $ROOT/tmp/collect_r${R}_m${M}.log 2>&1
+```
+
 ## 8. 収集後の工程（別途）
 
 - Step1（return 計算）は約 16 秒で終わる。
@@ -123,7 +172,6 @@ seed は **(分割, ラウンド, 環境番号 m)** ごとに一意にする。2
 
 ## 9. 未決定・要確認
 
-- 3 環境の GPU とメモリの仕様（同じ前提で書いている）。
 - train の本数（4,096 本でよいか）、ラウンド数。
 - `max_episode_steps` を 480（公式）にするか、520（前回）のままにするか。
 - P1 の seed の扱い（`rank` の足し方を含む）の最終確認。
