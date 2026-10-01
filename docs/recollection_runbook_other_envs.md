@@ -112,6 +112,22 @@ disown
 - 進捗: `tail -c 300 $ROOT/tmp/collect_${TAG}.log | tr '\r' '\n' | tail -2`（`Evaluating Rollout Epochs` の進捗バーが見える）。
 - 終了の判定: ログの最後に評価結果の表（`success_once` など）が出て、プロセス（`eval_embodied_agent.py`）が消える。
 - **再実行（retry）が必要になったとき**（落ちた、途中で止めた等）: **同じ seed で再実行しない**（途中までの分と同じデータができる）。`save_dir` の末尾を `_t2` にし、env の seed とノイズの seed の両方に `+5000` を足す（3 回目は `+10000`）。依頼者に報告する。
+- **失敗した（落ちた）収集の出力は、再実行の前に、壊れたファイルを削除する**（§ 4.5）。
+
+## 4.5 壊れたファイルの削除（落ちた収集のあと、全環境で行う）
+
+収集が途中で落ちると（例: Ray のメモリ不足）、書きかけの parquet が 1 つ残る。変換スクリプトは、データファイルを直接読むので、**壊れたファイルを削除すれば、残りは使える**（メタデータの件数は古いままだが、使われない）。
+
+```bash
+cd /workspace/libero_RL
+# 収集のプロセスが終わっていることを確認してから実行する（書きかけのファイルを消さないため）
+ps -eo cmd | grep -c "[e]val_embodied_agent"        # 0 であること
+RLinf/.venv-smolvla/bin/python scripts/remove_corrupt_parquets.py --dry-run $SAVE   # まず一覧だけ
+RLinf/.venv-smolvla/bin/python scripts/remove_corrupt_parquets.py $SAVE             # 削除
+```
+
+- 読めないファイルだけを削除する。**完全なファイルは削除しない**。更新から 10 分未満のファイルは、収集中の可能性があるため、飛ばす（`--min-age-min` で変更できる）。
+- **失敗した出力の保存先（`m0` など）は、削除せず残す**（壊れた 1 ファイルを除いた部分は、有効なデータとして使える）。
 
 ## 5. 完了報告（各フェーズの終了時に、環境ごとに書く）
 
@@ -119,6 +135,8 @@ disown
 
 ```bash
 ROOT=/workspace/libero_RL; TAG=<smoke_m1 / eval_m1 / train_r1_m1 など>
+# 先に、壊れたファイルがあれば削除する（§ 4.5）
+$ROOT/RLinf/.venv-smolvla/bin/python $ROOT/scripts/remove_corrupt_parquets.py $SAVE
 {
   echo "host=$(hostname)  M=$M  phase=$PHASE  R=${R:-}  finished=$(date '+%F %T')"
   echo "fingerprint=$(bash $ROOT/scripts/preflight_collect_env.sh 2>/dev/null | grep -o 'fingerprint: [0-9a-f]*')"

@@ -88,6 +88,10 @@ seed は **(分割, ラウンド, 環境番号 m)** ごとに一意にする。2
 - そのため、**ラウンドに分ける**。1 ラウンド = 各環境 60 エポック（約 300 エピソード、PNG 約 18GB）、3 環境で約 900 エピソード（約 55GB）。変換して PNG を消してから、次のラウンドを始める。約 5 ラウンド。
 - 各ラウンドは、別のデータセット（`libero10_task0_train_r<R>`）に変換する。Step1〜3 は複数データセットを扱える。最後に、lerobot の `aggregate_datasets` で 1 つにまとめる案（v3.0 変換後）がある。
 
+### 5.2.5 落ちた収集の後始末
+- 収集が途中で落ちると、書きかけの parquet が 1 つ残る。`scripts/remove_corrupt_parquets.py` で、**読めないファイルだけを削除**する（全環境で実施。手順書の § 4.5）。収集中の書きかけを消さないよう、更新から 10 分未満は飛ばし、収集のプロセスが終わってから実行する。
+- 落ちたラウンドは、保存先を残したまま、`_t2`（seed + 5000）で再実行する。重複検査（`check_collected_duplicates.py`）は、壊れたファイルを警告して飛ばす。
+
 ### 5.3 変換
 - `convert_rlinf_collected_to_v21.py` は、`<src>/rank_*/id_*` の形式を読む。3 環境の出力を、**ランク番号をずらしたシンボリックリンクで 1 つの `--src` にまとめる**（`rank_0`＝環境 0、`rank_1`＝環境 1、`rank_2`＝環境 2）。
 - 変換は、`pixi run -e lerobot-v21 python scripts/convert_rlinf_collected_to_v21.py --src <まとめた dir> --dst <データセット> --max-episodes N`。
