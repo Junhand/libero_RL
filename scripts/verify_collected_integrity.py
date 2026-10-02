@@ -62,7 +62,7 @@ def check_images(path_str: str):
     return n, bad, first
 
 
-def check_file(path: Path, fps: float, max_steps: int, chunk: int):
+def check_file(path: Path, fps: float, max_steps: int, chunk: int, min_frames: int = 100):
     """Returns (episodes_found, problems, notes)."""
     problems, notes, eps = [], [], []
     try:
@@ -84,8 +84,12 @@ def check_file(path: Path, fps: float, max_steps: int, chunk: int):
         succ = g["is_success"].to_numpy(dtype=bool)
         if succ.min() != succ.max():
             problems.append(f"{tag}: is_success changes inside the episode")
-        if not succ[-1] and n != max_steps:
+        if not succ[-1] and n != max_steps and n >= min_frames:
             problems.append(f"{tag}: failed episode has {n} < {max_steps} frames (cut short)")
+        if n < min_frames:
+            # init-state pool wrap artifact: a finished env runs one chunk and is recorded as an episode.
+            # It can be labelled success or failure. The converter drops it (--min-frames).
+            notes.append(f"{tag}: only {n} frames (success={bool(succ[-1])}) -> collection artifact, dropped at conversion")
         if succ[-1] and n % chunk != 0:
             notes.append(f"{tag}: success ends at {n} (not a multiple of {chunk})")
         ts = g["timestamp"].to_numpy(dtype=np.float64)
@@ -107,6 +111,7 @@ def main() -> int:
     ap.add_argument("--max-steps", type=int, default=520)
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--min-age-min", type=float, default=5.0)
+    ap.add_argument("--min-frames", type=int, default=100, help="shorter episodes are reported as collection artifacts (info, not a problem)")
     ap.add_argument("--no-images", action="store_true")
     ap.add_argument("--workers", type=int, default=8, help="keep small: each worker holds a few MB, but the container limit is 25GB")
     args = ap.parse_args()
@@ -136,7 +141,7 @@ def main() -> int:
                     young.add(f)
                     n_young += 1
                     continue
-                eps, pr, nt = check_file(f, args.fps, args.max_steps, args.chunk)
+                eps, pr, nt = check_file(f, args.fps, args.max_steps, args.chunk, args.min_frames)
                 n_eps += len(eps)
                 for e in eps:
                     ep_files[e].append(f.name)
@@ -166,8 +171,8 @@ def main() -> int:
             print(f"           - {x}")
         if len(issues) > 12:
             print(f"           - ... {len(issues) - 12} more")
-        if notes:
-            print(f"           (info: {len(notes)} success episode(s) not ending on a chunk boundary)")
+        for x in notes[:6]:
+            print(f"           (info: {x})")
     print(f"\n{len(summary)} shard(s) checked, {total_bad} with problems")
     return 1 if total_bad else 0
 
