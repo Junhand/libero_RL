@@ -53,7 +53,7 @@ def decode_image(value) -> np.ndarray:
     return np.asarray(value, dtype=np.uint8)
 
 
-def iter_episodes(shard: Path):
+def iter_episodes(shard: Path, min_frames: int = 0):
     """Yield (task, frames DataFrame) per episode of one v3.0 shard, in episode order.
 
     A data file holds one episode when episodes run to the step limit, but SEVERAL episodes
@@ -71,8 +71,13 @@ def iter_episodes(shard: Path):
     files = sorted(shard.glob("data/chunk-*/file-*.parquet"), key=lambda p: int(p.stem.split("-")[-1]))
     for f in files:
         table = pq.read_table(f).to_pandas()
-        for _, ep in table.groupby("episode_index", sort=True):
+        for epi, ep in table.groupby("episode_index", sort=True):
             ep = ep.sort_values("frame_index")
+            if len(ep) < min_frames:
+                # Artifact of the init-state pool wrapping around: an env that got reset id -1 is not reset and
+                # runs one action chunk on a finished episode, which is recorded as a ~10-frame "failed" episode.
+                print(f"[drop] {f} episode_index={int(epi)}: {len(ep)} frames < {min_frames} (collection artifact)", flush=True)
+                continue
             yield task_by_index[int(ep["task_index"].iloc[0])], ep
 
 
@@ -96,11 +101,11 @@ def _decode_episode(args: tuple[str, list, list, list, list, list]) -> dict:
     }
 
 
-def _episode_jobs(shards: list[Path], max_episodes: int | None):
+def _episode_jobs(shards: list[Path], max_episodes: int | None, min_frames: int = 0):
     """Yield picklable per-episode decode jobs, in the same order main() used to consume them."""
     n = 0
     for shard in shards:
-        for task, ep in iter_episodes(shard):
+        for task, ep in iter_episodes(shard, min_frames):
             if max_episodes is not None and n >= max_episodes:
                 return
             yield (
@@ -121,6 +126,8 @@ def main() -> None:
     parser.add_argument("--dst", type=Path, required=True, help="output v2.1 dataset (must not exist)")
     parser.add_argument("--max-episodes", type=int, default=None, help="keep the first N episodes")
     parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument("--min-frames", type=int, default=100,
+                        help="drop episodes shorter than this (collection artifacts; real episodes are >= ~250 frames)")
     parser.add_argument(
         "--workers",
         type=int,
@@ -193,7 +200,7 @@ def main() -> None:
     in_flight_target = args.workers * 2
     pending: list = []
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
-        for job in _episode_jobs(shards, args.max_episodes):
+        for job in _episode_jobs(shards, args.max_episodes, args.min_frames):
             pending.append(pool.submit(_decode_episode, job))
             if len(pending) >= in_flight_target:
                 consume(pending.pop(0).result())

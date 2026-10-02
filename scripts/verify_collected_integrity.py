@@ -39,20 +39,27 @@ from PIL import Image
 
 
 def check_images(path_str: str):
-    """Decode every PNG of one file. Returns (n_frames, n_bad, first_error)."""
-    df = pd.read_parquet(path_str, columns=["image", "wrist_image"])
-    bad, first = 0, ""
-    for col in ("image", "wrist_image"):
-        for v in df[col]:
-            try:
-                im = Image.open(io.BytesIO(v["bytes"]))
-                im.load()
-                if im.size != (256, 256) or im.mode not in ("RGB", "RGBA"):
-                    raise ValueError(f"unexpected image {im.size} {im.mode}")
-            except Exception as e:  # noqa: BLE001
-                bad += 1
-                first = first or f"{type(e).__name__}: {str(e)[:60]}"
-    return len(df), bad, first
+    """Decode every PNG of one file, streaming 32 rows at a time (small memory footprint).
+
+    Returns (n_frames, n_bad, first_error).
+    """
+    pf = pq.ParquetFile(path_str)
+    bad, first, n = 0, "", 0
+    for batch in pf.iter_batches(batch_size=32, columns=["image", "wrist_image"]):
+        cols = batch.to_pydict()
+        n += batch.num_rows
+        for col in ("image", "wrist_image"):
+            for v in cols[col]:
+                try:
+                    im = Image.open(io.BytesIO(v["bytes"]))
+                    im.load()
+                    if im.size != (256, 256) or im.mode not in ("RGB", "RGBA"):
+                        raise ValueError(f"unexpected image {im.size} {im.mode}")
+                except Exception as e:  # noqa: BLE001
+                    bad += 1
+                    first = first or f"{type(e).__name__}: {str(e)[:60]}"
+        del cols
+    return n, bad, first
 
 
 def check_file(path: Path, fps: float, max_steps: int, chunk: int):
@@ -101,7 +108,7 @@ def main() -> int:
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--min-age-min", type=float, default=5.0)
     ap.add_argument("--no-images", action="store_true")
-    ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--workers", type=int, default=8, help="keep small: each worker holds a few MB, but the container limit is 25GB")
     args = ap.parse_args()
 
     shards = []
