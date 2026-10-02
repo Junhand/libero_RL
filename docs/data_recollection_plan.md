@@ -213,3 +213,10 @@ bash evaluations/run_eval.sh libero libero_10_smolvla_collect \
 - 一度、`LiberoEnv._get_ordered_reset_state_ids` を循環して配る形に直すパッチ（`smolvla-eval-reset-wrap.patch`）を作ったが、**共有ツリーには適用せず、取り消した**（commit `63bbfb9` に残っている。必要なら、そこから復元できる）。
 - 原因の再現（関数単体、`scripts/test_libero_reset_ids.py`）: 1〜2 個の環境が同時にリセットされる状況の 27,962 回の要求で、現行コードは 0.583%（163 件）が `-1` を返す。これが、境界で偽エピソードが出る推定原因である。環境全体を動かした再現実験は、していない。
 - 以後のラウンドでも、検査（`verify_collected_integrity.py`）で、100 フレーム未満のエピソードを確認し、変換時に除外する。
+
+### RLinf の変更は、全てパッチに収まっている（2026-10-02 に検証）
+
+- 検証方法: RLinf を、パッチの基準 commit（`d1bf37c`）にチェックアウトし直して、`patches/rlinf/*.patch` を順に適用したものと、実際の共有ツリーを、パッチが触る 18 ファイルで比較した。
+- 結果: **1 件の漏れ**があった。`rlinf/data/datasets/recap/smolvla_cfg.py`（`smolvla-recap.patch` で新規作成される、Git の未追跡ファイル）への変更（advantage ラベルが欠けたフレームを、エラーにせず、学習から除外する処理）が、パッチに入っていなかった。未追跡ファイルの変更は、`git diff` では拾われないため。**`smolvla-s-recap-dataset-skip-unlabeled.patch` として切り出し**、再検証で、**18 ファイル全てが一致**（差分 0）。
+- **パッチを作るときの注意**: パッチで新規作成されたファイル（`rlinf/models/embodiment/smolvla/`、`smolvla_cfg.py`、`smolvla.yaml` など）を、その後に変更するときは、`git diff` ではなく、**変更前のコピーと変更後のコピーを `diff -u` で比較**して、パッチにする（新規ファイルの変更は、パッチの順序で、作成するパッチより後に適用されるように、名前を付ける）。
+- RLinf のうち、パッチ以外で残っているのは、インストールのスクリプトが作った `pyproject.toml.rlinf-torch-bak.*`（未追跡の退避ファイル 3 つ。私たちの変更ではない）のみ。

@@ -1,0 +1,78 @@
+--- a/rlinf/data/datasets/recap/smolvla_cfg.py
++++ b/rlinf/data/datasets/recap/smolvla_cfg.py
+@@ -25,6 +25,7 @@
+ 
+ from __future__ import annotations
+ 
++import logging
+ from pathlib import Path
+ from typing import Any
+ 
+@@ -34,6 +35,8 @@
+ from omegaconf import DictConfig, OmegaConf
+ from torch.utils.data import ConcatDataset, DataLoader, Dataset, Sampler
+ 
++logger = logging.getLogger(__name__)
++
+ from rlinf.models.embodiment.smolvla.smolvla_action_model import (
+     ADVANTAGE_PROMPT_SUFFIX,
+ )
+@@ -86,27 +89,46 @@
+         rows = self.dataset.hf_dataset.select_columns(["episode_index", "frame_index"])
+         episode_index = np.asarray(rows["episode_index"]).reshape(-1)
+         frame_index = np.asarray(rows["frame_index"]).reshape(-1)
+-        missing = [
+-            (int(e), int(f))
+-            for e, f in zip(episode_index, frame_index)
+-            if (int(e), int(f)) not in lookup
++        valid = [
++            (int(e), int(f)) in lookup for e, f in zip(episode_index, frame_index)
+         ]
+-        if missing:
+-            raise ValueError(
+-                f"{len(missing)} frames of {root} have no advantage label in "
+-                f"{advantages_path} (first: {missing[:5]}). Re-run RECAP Step 3 on "
+-                "this dataset."
++        num_missing = len(valid) - sum(valid)
++        if num_missing:
++            missing_preview = [
++                (int(e), int(f))
++                for (e, f), ok in zip(zip(episode_index, frame_index), valid)
++                if not ok
++            ][:5]
++            # Frames can be missing an advantage label when their source video
++            # failed to decode during RECAP Step 3 (e.g. a corrupt episode) and
++            # compute_advantages.py's retry logic skipped it. Exclude them here
++            # instead of crashing, since Step 3 cannot produce a label for a
++            # frame it could never observe.
++            logger.warning(
++                "%d/%d frames of %s have no advantage label in %s "
++                "(first missing: %s). Excluding them from training.",
++                num_missing,
++                len(valid),
++                root,
++                advantages_path,
++                missing_preview,
+             )
++        self._indices = np.nonzero(valid)[0]
+         self.advantage = np.array(
+-            [lookup[(int(e), int(f))] for e, f in zip(episode_index, frame_index)],
++            [
++                lookup[(int(e), int(f))]
++                for (e, f), ok in zip(zip(episode_index, frame_index), valid)
++                if ok
++            ],
+             dtype=bool,
+         )
+ 
+     def __len__(self) -> int:
+-        return len(self.dataset)
++        return len(self._indices)
+ 
+     def __getitem__(self, idx: int) -> dict[str, Any]:
+-        item = self.dataset[idx]
++        real_idx = int(self._indices[idx])
++        item = self.dataset[real_idx]
+         sample = {dst: item[src] for src, dst in self.key_map.items()}
+         task = item["task"]
+         # Re-sampled every time, like RLinf's per-step unconditional dropout.
