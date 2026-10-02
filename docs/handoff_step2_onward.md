@@ -19,7 +19,7 @@ RLinf の RECAP を smolVLA（`lerobot/smolvla_libero`）で再現する。対�
 - **プロセスの停止に `pkill` / `pkill -f` / `killall` を使わない**。`pgrep -af` と `ps` で PID を確認して `kill <PID>` する。
   また、`pgrep -f <パターン>` は、自分のシェルのコマンド文字列にも一致する場合がある。PID の確認は `ps -eo pid,cmd | grep <パターン> | grep -v grep` を使う。
 - データやログの削除は、ユーザーの明示的な指示があるときだけ行う。削除コマンドは環境の権限設定で拒否されることがあり、その場合はユーザーがコマンドを実行する。
-- ディスクのクォータは 600GB。現在は約 324GB（`collected_v2/` の元 PNG が約 234GB）。
+- ディスクのクォータは 600GB。現在は約 240GB（`collected_v2/` の元 PNG は削除済み。他の環境の RL token 用の特徴量が `tmp/rlt_stage1/` に約 90GB）。
 - コンテナのメモリ上限は 25GB（cgroup）。DataLoader のワーカーを増やすと OOM になる。
 
 ## 3. 再収集したデータ（完了）
@@ -36,7 +36,7 @@ RLinf の RECAP を smolVLA（`lerobot/smolvla_libero`）で再現する。対�
 - **Step1（return）は全データセットに付与済み**。`meta/returns_fail300.parquet`（gamma=1.0、失敗時の終端報酬 -300、タグ `fail300`）。
   全 4,122 本でルールとの不一致 0（成功は先頭 -(n-1)・末尾 0、失敗は先頭 -(n-1)-300・末尾 -300、範囲 [-819, 0]）。
 - 変換時に、10 フレームしかない偽エピソード 3 本を除外した（初期状態プールの境界で、環境がリセットされずに出る収集のアーティファクト）。除外は `--min-frames 100`。
-- 元の PNG は `collected_v2/{train_r1..r4,eval}/m*/rank_0/id_*`（ユーザー指示で保持。削除しない）。
+- 元の PNG（`collected_v2/`）は、2026-10-02 にユーザーの指示で削除済み。以降の処理（Step2〜9、RL token、STEAM）は、変換後の動画（`data/smolvla_recap/`）を使う。検査・照合のスクリプト（`verify_collected_integrity.py` など）は、元データが無いので再実行できない。
 - 旧データ（`libero10_task0_train` など）と旧 Step2/3/4 のログ・チェックポイントは、ユーザーが削除済み。旧パイプラインの結果は使えない。
 - 詳細は `docs/data_recollection_plan.md`。
 

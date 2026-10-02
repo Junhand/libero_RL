@@ -32,7 +32,7 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   - train: `data/smolvla_recap/libero10_task0_train_v2_r{R}_m{M}`（11 個）
   - eval: `data/smolvla_recap/libero10_task0_eval_v2_m{0,1,2}`（計 64 本）
   - sft（人の収集、30 本、20fps）: `data/smolvla_recap/libero10_task0_sft`（v3.0 版は `data/smolvla_recap/v30/libero10_task0_sft`）
-  - 元の PNG は `collected_v2/`（削除しない）。偽エピソード 3 本（10 フレーム）は変換時に除外。
+  - 元の PNG（`collected_v2/`、約 231GB）は、2026-10-02 にユーザーの指示で削除済み（RECAP・RL token・STEAM は変換後の動画を使う）。動画の再変換・収集データの検査スクリプトの再実行はできない。偽エピソード 3 本（10 フレーム）は変換時に除外。
   - 詳細は `docs/data_recollection_plan.md`。
 - **Step1（return 計算）**: 新 train 11 個と eval 3 個に付与済み（`meta/returns_fail300.parquet`、
   gamma=1.0、失敗時の終端報酬 -300）。全 4,122 本でルールとの不一致 0。範囲は [-819, 0]。
