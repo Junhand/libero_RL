@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step2 v2: 4000 steps, checkpoint every 300 steps (~1 h at 11.5 s/step, micro batch 16 on RTX 6000 Ada 48GB), eval every 300 steps (1000 samples x 3 sets).
+# Step2 v2: 4000 steps, checkpoint every 300 steps (~1 h at 11.5 s/step, micro batch 16 on RTX 6000 Ada 48GB), eval every 300 steps (300 samples x 3 sets).
 # Restarts from the latest checkpoint if the training process dies. Keeps only the last 2 checkpoints.
 cd /workspace/libero_RL
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -13,7 +13,7 @@ prune() {
 for attempt in 1 2 3 4 5 6; do
   R=$(latest_ckpt); EXTRA=""; [ -n "$R" ] && EXTRA="+runner.resume_dir=$(realpath $R)"
   echo "$(date +%T) attempt $attempt resume=${R:-none}" >> tmp/step2_v2_events.log
-  ( cd tmp; MB=16 SAVE=300 VAL=300 EVS=1000 bash ../scripts/run_step2_v2.sh 4000 $EXTRA > step2_v2_attempt$attempt.log 2>&1 ) &
+  ( cd tmp; MB=16 SAVE=300 VAL=300 EVS=300 bash ../scripts/run_step2_v2.sh 4000 $EXTRA > step2_v2_attempt$attempt.log 2>&1 ) &
   P=$!
   while kill -0 $P 2>/dev/null; do prune; sleep 120; done
   R=$(latest_ckpt); S=${R##*_}
