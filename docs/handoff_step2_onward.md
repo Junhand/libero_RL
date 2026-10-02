@@ -94,3 +94,11 @@ RLinf の RECAP を smolVLA（`lerobot/smolvla_libero`）で再現する。対�
 - 一部のスクリプトは環境依存の準備が必要（`scripts/preflight_collect_env.sh`）。
 - 報告は、完了と問題を中心に。ユーザーが「現状を教えて」と聞いたときは、現状を答える。
 - ユーザーへの質問は、判断が必要なものに限る。推測は推測と明記し、確認できていないことを確認済みと書かない。
+
+## 7. 決定事項（2026-10-02）
+
+- **Step3 以降の sft は、Task 0 の 3 本だけを使う**（ユーザー決定）。
+  - `libero10_task0_sft`（30 本、10 タスク × 3 本）のうち、Task 0（"put both the alphabet soup and the tomato sauce in the basket"、836 フレーム）の 3 本のみ。
+  - 理由: Step4 は `balance_dataset_weights: true` で sft と rollout を 1:1 で混ぜるため、全タスク入りだと学習の約半分が Task 0 以外になる。
+  - Step3 の前に、Task 0 の 3 本だけの sft データセット（v2.1）を新規に作る（元の `libero10_task0_sft` は変更しない）。作り方の詳細はまだ決めていない。v3.0 変換は、その後に行う。
+  - 実行中の Step2 は、全タスク入りの sft（学習データの 0.5% 未満）のまま続ける。
