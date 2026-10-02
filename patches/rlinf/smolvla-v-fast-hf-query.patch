@@ -1,0 +1,51 @@
+--- a/rlinf/data/datasets/recap/smolvla_cfg.py
++++ b/rlinf/data/datasets/recap/smolvla_cfg.py
+@@ -26,6 +26,7 @@
+ from __future__ import annotations
+ 
+ import logging
++import types
+ from pathlib import Path
+ from typing import Any
+ 
+@@ -50,6 +51,32 @@
+ }
+ 
+ 
++def _fast_query_hf_dataset(self, query_indices: dict[str, list[int]]) -> dict:
++    """Replacement for ``DatasetReader._query_hf_dataset`` (lerobot 0.6.1).
++
++    The original does ``self.hf_dataset[key][relative_indices]``, which converts the
++    *whole* column to torch tensors for every sample (O(#frames), ~8 s/sample on the
++    1.76M-frame merged dataset). Indexing rows first returns the same tensors in ms.
++    """
++    result: dict = {}
++    for key, q_idx in query_indices.items():
++        if key in self._meta.video_keys:
++            continue
++        relative_indices = (
++            q_idx
++            if self._absolute_to_relative_idx is None
++            else [self._absolute_to_relative_idx[idx] for idx in q_idx]
++        )
++        result[key] = torch.stack(self.hf_dataset[relative_indices][key])
++    return result
++
++
++def _use_fast_hf_query(dataset: Any) -> None:
++    reader = getattr(dataset, "reader", None)
++    if reader is not None and hasattr(reader, "_query_hf_dataset"):
++        reader._query_hf_dataset = types.MethodType(_fast_query_hf_dataset, reader)
++
++
+ class SmolVLARecapDataset(Dataset):
+     """One LeRobot v3.0 dataset with per-frame advantage labels."""
+ 
+@@ -75,6 +102,7 @@
+             delta_timestamps={action_key: [i / fps for i in range(chunk_size)]},
+             video_backend=video_backend,
+         )
++        _use_fast_hf_query(self.dataset)
+         self.key_map = dict(key_map)
+         self.key_map[f"{action_key}_is_pad"] = "action_is_pad"
+         self.unconditional_prob = float(unconditional_prob)
