@@ -19,47 +19,33 @@ LIBERO-10 Task 0 上に再現する実験。手順の全詳細は `README.md` �
 Step1（return 計算） → Step2（価値モデル SFT） → Step3（advantage 計算） →
 Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータでの評価）
 
-## 現在の進捗（2026-10-01 時点）
+## 現在の進捗（2026-10-02 時点）
+
+**旧データ（成功後も 520 ステップ続行）での Step1〜3 は、無効になった。** 旧データと、旧 Step2/3/4 のログ・チェックポイントは、ユーザーが削除済み（旧版の記録: ベースライン `success_once=0.40`、Step2 は L40S で 8,000 ステップ・25 時間）。
+旧データは return が「フレーム番号と成否」だけで決まっていたため、成功で打ち切る設定で再収集した。**次の作業は、`docs/handoff_step2_onward.md` が一次情報（他環境の Claude への引き継ぎ文書）。**
 
 - ベースライン評価: `lerobot/smolvla_libero` で `success_once=0.40`（20/50、固定初期状態 50 個）。
-  `smolvla_libero_plus` は 0.96 と高すぎたため不採用（アドバンテージ信号が出にくい）。
-- rollout 収集: train split 目安 4,096 episodes → 完了（途中で破損した 2 episodes は除外）。
-- **Step1（return 計算）**: sft / train / train_extra / eval の 4 データセット全てでフルスケール
-  完了。`meta/returns_fail300.parquet` 生成済み。
-- **Step2（価値モデル SFT）**: フルスケール完了。8000/8000 step、所要 25 時間 2 分。
-  最終 checkpoint:
-  `RLinf/logs/value_sft/recap_value_model_sft-20260929-23:35:58/step2_value_sft/checkpoints/global_step_8000`
-  最終指標: `train/value_spearman=0.946`, `train/loss=2.09`, `eval/cat_acc_best=0.287`,
-  `eval/cat_acc_neighbor=0.442`。
-- **Step3（advantage 計算）**: **実行中（2026-10-01 12:50 UTC 再起動）**。`tmp/step3_supervisor.sh`
-  が `tmp/run_step3_advantages.sh`（3 データセットを **1 プロセスで一括処理**、`batch_size=16`、
-  DataLoader workers 4）を成功するまで最大 20 回再実行する。ログは `tmp/step3_advantages.log`、
-  監督ログは `tmp/step3_supervisor.log`（`STEP3 DONE` が出れば完了）、メモリは `tmp/step3_mem.log`。
-  Step2 の `global_step_8000` を使用。対象は sft + **train_clean** + train_extra の
-  2,233,605 サンプル、A5000 で約 38 samples/s、**約 16 時間**。
-  - **途中再開**: `advantage-resume-checkpoint.patch` で Phase 1（GPU 推論）の結果を
-    `tmp/step3_state/phase1_<dataset>.npz` に 2000 バッチごとに保存し、再起動時に続きから再開する
-    （完了済みデータセットは再計算しない）。`advantage.resume_dir` が null なら無効。
-    中断再開の結果は通し実行と完全一致（差 0.0）を確認済み。**完了後は `tmp/step3_state/` を削除**。
-  - **初回実行は 3 時間 22 分で OOM**（cgroup 上限 25GB、DataLoader worker が SIGKILL）。
-    worker 12 個で長時間かけて増加したと推測（未検証）。worker を 4 に減らし、再開機能で保険をかけた。
-  - 一括処理が必須: positive 閾値（上位 30%）は全データセットの advantage を結合して 1 つ決める。
-    データセットごとに分けて実行すると閾値がずれる（`tmp/run_step3_full.sh` はこの理由と、
-    `data.return_min` が base config に無く Hydra で落ちる理由で廃止）。return の正規化範囲
-    [-819, 0] は各 `stats.json` から自動算出されるので指定不要（Step2 と同じ値）。
-  - 途中で止めると最初からやり直し（閾値計算と保存は全処理後）。
-  - 速度は GPU 律速で、バッチを大きくしても速くならない。1024 は OOM、384 は 24GB に載らない見込み。
-    （RTX 6000 Ada 単独使用では約 55/s・約 11.3 時間の実測もあり、GPU 依存。）
-  - **`libero10_task0_train_clean`**: 壊れた episode 2599 を除いた train のコピー
-    （3199 episodes / 1,663,480 frames）。`scripts/make_clean_train_dataset.py` で作成
-    （data/videos はシンボリックリンク）。LeRobot v2.1 は episode 番号が 0..N-1 連続前提なので
-    **欠番にできず番号を詰め直している**（旧 2600→新 2599。対応表は `meta/episode_remap.json`）。
-    Step3 の advantages は clean 側の `meta/` に書かれ、Step4 もこの clean 版を使う。
-    元の `libero10_task0_train` は変更していない。
-- **Step4（advantage 条件付き SFT）**: 未実行。Step3 完了後、30000 step（README/RLinf docs
-  で確認済みの目標値）で実行する。
-- **Step9（評価）**: 未実行。ゴールは `eval/success_once` がベースライン 0.40 を上回ることの
-  確認（RECAP のアドバンテージ学習に効果があったかどうかの最終判定）。
+  `smolvla_libero_plus` は 0.96 と高すぎたため不採用。
+- **再収集（完了）**: 成功で打ち切る設定（`ignore_terminations=False`）、3 環境 × 4 ラウンド、2 並列。
+  有効な train は **4,122 本・1,757,810 フレーム、成功 1,689 本（41.0%）**、成功の長さは平均 292、失敗は常に 520。
+  LeRobot v2.1（動画）に変換して検証済み。
+  - train: `data/smolvla_recap/libero10_task0_train_v2_r{R}_m{M}`（11 個）
+  - eval: `data/smolvla_recap/libero10_task0_eval_v2_m{0,1,2}`（計 64 本）
+  - sft（人の収集、30 本、20fps）: `data/smolvla_recap/libero10_task0_sft`（v3.0 版は `data/smolvla_recap/v30/libero10_task0_sft`）
+  - 元の PNG は `collected_v2/`（削除しない）。偽エピソード 3 本（10 フレーム）は変換時に除外。
+  - 詳細は `docs/data_recollection_plan.md`。
+- **Step1（return 計算）**: 新 train 11 個と eval 3 個に付与済み（`meta/returns_fail300.parquet`、
+  gamma=1.0、失敗時の終端報酬 -300）。全 4,122 本でルールとの不一致 0。範囲は [-819, 0]。
+  sft の return も既存。
+- **Step2（価値モデル SFT、新データ）**: **未実行（GPU の良い環境で実行する予定）**。4,000 ステップ、1 時間おきに checkpoint。
+  A5000（24GB）では、micro batch 8 + `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` で 24 秒/ステップ（約 27 時間）。
+  起動は `scripts/run_step2_v2.sh`、再開付きは `scripts/step2_v2_supervisor.sh`。速度測定と注意は、引き継ぎ文書の §4。
+- **Step3（advantage 計算）**: 未実行。sft + 新 train 11 個を **1 プロセスで一括処理**する（positive 閾値、上位 30%、は全データセットを結合して決めるため）。
+  途中再開は `advantage-resume-checkpoint.patch`（`tmp/step3_state/`）。DataLoader のワーカーは 4 個まで。旧スクリプト `tmp/run_step3_advantages.sh` が例。
+  return の正規化範囲 [-819, 0] は各 `stats.json` から自動算出されるので指定不要。
+- **Step4（advantage 条件付き SFT）**: 未実行。新データを v3.0 に変換（`scripts/convert_rlinf_to_lerobot_v30.sh`）してから、30000 ステップ（README/RLinf docs の目標値）。
+  24GB の GPU で fp32・micro batch 32 が載るかは未確認。
+- **Step9（評価）**: 未実行。ゴールは `eval/success_once` がベースライン 0.40 を上回ること。
 
 ## 既知のハマりどころ（再発見しなくていいように）
 
@@ -106,10 +92,18 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
     （`memory.oom_control` の `oom_kill` で確認）。`pkill -f compute_advantages.py` は自分のシェルの
     コマンドラインにも一致して自分を落とすので、PID を指定して kill すること。
 
+12. **Step2 は GPU メモリの断片化で遅くなる（24GB の A5000）**。micro batch 8 で 48 秒/ステップだったのが、
+    `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` で 24 秒/ステップになる。micro 16 は 24GB ではメモリ不足
+    （gradient checkpointing も効果なし）。`save_interval` は `val_check_interval` で割り切れる必要があり、
+    `global_batch_size` は `micro_batch_size × GPU 数` で割り切れる必要がある（Hydra の assertion で落ちる）。
+13. **`pkill` / `pkill -f` / `killall` は使わない**（CLAUDE.md の「禁止事項」）。シェルごと落ちる事故が複数回起きた。
+    `ps -eo pid,cmd | grep <パターン> | grep -v grep` で PID を確認し、`kill <PID>` を使う。`pgrep -f` も、自分のシェルのコマンド文字列に一致して落ちることがある。
+14. **収集の偽エピソード（10 フレーム）**: 初期状態プールの境界で、環境がリセットされずに出る。変換時に `--min-frames 100` で除外する（RLinf 側は修正しない方針）。
+
 ## GPU 環境の変更
 
-2026-10-01 時点の GPU は **RTX A5000（24GB）1 枚**。ベースライン評価〜Step2 は L40S（46GB）で
-実行していた。README の VRAM・速度の記述は L40S 前提なので、Step4（fp32、micro batch 32）が
+2026-10-02 時点のこの環境の GPU は **RTX A5000（24GB）1 枚**。旧版のベースライン評価〜Step2 は L40S（46GB）で
+実行していた。Step2（新データ）は、ユーザーの指示で、性能の良い GPU の別環境で実行する。README の VRAM・速度の記述は L40S 前提なので、Step4（fp32、micro batch 32）が
 24GB に収まるかは本番前に要確認。
 
 ## 長時間学習を監視する際の注意
@@ -119,7 +113,7 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
   デタッチした watchdog スクリプト**（`nohup bash tmp/xxx_watchdog.sh > tmp/xxx_watchdog.log
   2>&1 & disown`）を `tmp/` に書いて起動し、状況確認のたびにそのログファイルを `tail` する
   運用にすること。
-- チェックポイントは 2 時間おきに保存し、常に最新 2 つだけ保持（watchdog で自動 prune）。
+- チェックポイントは定期的に保存し、最新 2 つ（と、節目のステップ）だけ保持（watchdog で自動 prune）。
   wandb には metrics のみアップロードし、モデル重みは上げない。
 - ユーザーから「確認頻度が多すぎる」「Claude の使用量を抑えて」という指示が出ている。
   進捗報告は実際のイベント（完了・クラッシュ・ディスク逼迫などの閾値超え）が起きたときのみ
@@ -135,9 +129,9 @@ Step4（advantage 条件付き SFT） → Step9（LIBERO シミュレータで�
 
 ## 次のアクション
 
-Step3（advantage 計算）を、Step2 の `global_step_8000` checkpoint を使って実行する。
-README.md の「6. Step1〜3（価値モデルとアドバンテージ）」セクション参照。
+1. Step2（新データ、4,000 ステップ、1 時間おきに checkpoint）を、GPU の良い環境で実行する（手順は `docs/handoff_step2_onward.md`）。
+2. Step3（一括処理）→ Step4（v3.0 変換後に SFT）→ Step9（評価）。各 Step の開始は、ユーザーの指示を待つ。
 
 ## 更新履歴
 
-2026-10-01、Step2 フルスケール完走直後に作成。Step3/4/9 が進んだら本スキルも更新すること。
+2026-10-01、Step2 フルスケール完走直後に作成。2026-10-02、データ再収集の完了（旧データの Step1〜3 は無効）と、Step2 の速度測定・引き継ぎを反映。Step2〜9 が進んだら本スキルも更新すること。
