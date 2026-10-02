@@ -102,3 +102,22 @@ RLinf の RECAP を smolVLA（`lerobot/smolvla_libero`）で再現する。対�
   - 理由: Step4 は `balance_dataset_weights: true` で sft と rollout を 1:1 で混ぜるため、全タスク入りだと学習の約半分が Task 0 以外になる。
   - Step3 の前に、Task 0 の 3 本だけの sft データセット（v2.1）を新規に作る（元の `libero10_task0_sft` は変更しない）。作り方の詳細はまだ決めていない。v3.0 変換は、その後に行う。
   - 実行中の Step2 は、全タスク入りの sft（学習データの 0.5% 未満）のまま続ける。
+
+## 8. Step4 用のデータ準備（完了、2026-10-02）
+
+Step4 のデータローダは、`balance_dataset_weights: true` のとき、各データセットに同じ重みを割り当てる（件数は無関係）。train が 11 個のままだと、sft と合わせた 12 個が約 1/12 ずつになり、意図した sft : rollout = 1 : 1 にならない。そのため、train を 1 つにマージした。
+
+- **マージ（v2.1）**: `data/smolvla_recap/libero10_task0_train_v2_merged`（4,122 本、1,757,810 フレーム、成功 1,689 本）。
+  `scripts/merge_v21_datasets.py` で、11 個をファイルレベルで結合した（R1 m0,m1,m2 → R2 m1,m2 → R3 m0,m1,m2 → R4 m0,m1,m2 の順）。
+  parquet は `episode_index`（0〜4121）と `index`（通しのフレーム番号）だけを振り直し、mp4 はコピー（再エンコードなし、ハードリンクなし）。元の 11 個は変更していない。
+  Step1（return）は、マージ後のデータセットで `compute_returns.py` を再実行した。
+  `scripts/verify_merged_v21.py` で、全エピソードの parquet の列、全 mp4（8,244 個、バイト単位）、`episodes.jsonl`/`episodes_stats.jsonl`、return を、元と照合し、全て一致した。
+  return は、元の 11 個の sidecar を番号を振り直して結合したものと全 1,757,810 行が一致し、ルール違反は 0、範囲は [-819, 0]。
+- **sft（Task 0 の 3 本）**: `data/smolvla_recap/libero10_task0_sft_target3`（3 本、836 フレーム、20fps）。
+  Step1 を付与し、元の `libero10_task0_sft` の Task 0 の 3 本（episode 15〜17）の return と、836 行の全てで一致（全て成功、先頭 -(n-1)・末尾 0）。
+- **v3.0 版**: `data/smolvla_recap/v30/libero10_task0_train_v2_merged`、`data/smolvla_recap/v30/libero10_task0_sft_target3`。
+  LeRobot 0.6 系（`.venv-smolvla`）で読み込めることを確認した（エピソード数・フレーム数が一致、画像・状態・行動が取得できる）。
+  v3.0 の `meta/` には、`returns_*.parquet` は含まれない（変換ツールが落とす。既存の `v30/libero10_task0_sft` も同じ）。Step4 は、advantage を `advantages_path` で、v2.1 側の `meta/advantages_*.parquet` から読む。
+- **Step3 は、`libero10_task0_train_v2_merged`（v2.1）と `libero10_task0_sft_target3`（v2.1）に対して実行する**（番号がマージ前と変わっているので、元の 11 個の train には実行しない）。
+  Step4 の設定は、v3.0 の 2 個、weight は両方 1.0 の予定。
+- 増えたディスク量: 約 22GB（v2.1 マージ 11GB、v3.0 変換 11GB）。
