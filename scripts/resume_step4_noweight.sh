@@ -2,6 +2,7 @@
 # Step4 を global_step_1000 から再開し、データセットの重みなし(data.balance_dataset_weights=false)に切り替えて 2000 ステップまで進める。
 # 終わったら Step9 評価まで自動で行う。落ちたら最新の checkpoint から再開（最大 6 回）、checkpoint は直近 2 つだけ残す。
 # メトリクスは tensorboard と wandb(project libero_RL) の両方に記録する。
+# 実行中の学習を引き継ぐ場合: ADOPT_PID=<train_vla_sft.py の PID> START=<学習開始の epoch 秒> bash scripts/resume_step4_noweight.sh
 # 実行: cd /workspace/libero_RL && nohup bash scripts/resume_step4_noweight.sh > /dev/null 2>&1 &
 cd /workspace/libero_RL
 ROOT=/workspace/libero_RL
@@ -30,16 +31,20 @@ run_step4() { # run_step4 <log file> [extra hydra args]
       runner.logger.project_name=libero_RL runner.logger.experiment_name=step4_recap_noweight_resume1000 \
       "$@" > $out 2>&1 )
 }
-START=$(date +%s)
-ckpts() { ls -d $LOGS/*-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_* 2>/dev/null | while read d; do [ $(stat -c %Y "$d") -ge $START ] && echo "${d##*_} $d"; done | sort -n; }
+START=${START:-$(date +%s)}
+ckpts() { ls -d $LOGS/*-libero10_task0_recap_smolvla/*/checkpoints/global_step_* 2>/dev/null | while read d; do [ $(stat -c %Y "$d") -ge $START ] && echo "${d##*_} $d"; done | sort -n; }
 latest_ckpt() { ckpts | tail -1 | cut -d' ' -f2-; }
 prune() { ckpts | head -n -2 | cut -d' ' -f2- | while read d; do rm -rf "$d"; log "pruned $d"; done; }
 log "start: resume from $BASE_CKPT, balance_dataset_weights=false, MB=$MB SAVE=$SAVE max_steps=$MAX_STEPS"
 for attempt in 1 2 3 4 5 6; do
-  R=$(latest_ckpt); [ -z "$R" ] && R=$BASE_CKPT
-  log "attempt $attempt resume=$R"
-  run_step4 tmp/step4_resume_attempt$attempt.log "+runner.resume_dir=$(realpath $R)" &
-  P=$!
+  if [ -n "$ADOPT_PID" ] && [ "$attempt" = 1 ]; then
+    P=$ADOPT_PID; log "実行中の学習(pid $P)を引き継ぐ"
+  else
+    R=$(latest_ckpt); [ -z "$R" ] && R=$BASE_CKPT
+    log "attempt $attempt resume=$R"
+    run_step4 tmp/step4_resume_attempt$attempt.log "+runner.resume_dir=$(realpath $R)" &
+    P=$!
+  fi
   while kill -0 $P 2>/dev/null; do prune; sleep 120; done
   R=$(latest_ckpt); S=${R##*_}
   if [ "${S:-0}" -ge $MAX_STEPS ]; then log "DONE Step4 step $S ckpt=$R"; break; fi
