@@ -23,7 +23,7 @@ for try in 1 2 3; do
   ( cd tmp; bash run_step3_v2.sh > step3_v2_retry$try.log 2>&1 )
 done
 if ! step3_ok; then log "ABORT: Step3 の advantage が作れなかった"; exit 1; fi
-log "Step3 完了: $(python3 - <<E
+log "Step3 完了: $(RLinf/.venv/bin/python - <<E
 import pandas as pd
 for p in ["$SFT_V21/$ADV","$TRN_V21/$ADV"]:
     d=pd.read_parquet(p,columns=["advantage"]); print(p.split('/')[-3], len(d), "positive=%.3f"%d.advantage.mean(), end="; ")
