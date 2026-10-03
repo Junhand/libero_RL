@@ -31,7 +31,7 @@ E
 )"
 
 # ---- 2. Step4 の共通設定 ----
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1
 TRAIN="data.train_data_paths=[{dataset_path:$SFT_V30,advantages_path:$SFT_V21/$ADV,weight:1.0},{dataset_path:$TRN_V30,advantages_path:$TRN_V21/$ADV,weight:1.0}]"
 run_step4() { # run_step4 <micro batch> <max_steps> <save_interval> <log file> [extra hydra args]
   local mb=$1 steps=$2 save=$3 out=$4; shift 4
@@ -39,7 +39,7 @@ run_step4() { # run_step4 <micro batch> <max_steps> <save_interval> <log file> [
     bash scripts/run_rlinf_vla_sft.sh libero10_task0_recap_smolvla "$TRAIN" \
       actor.model.model_path=$ROOT/models/smolvla_libero \
       actor.fsdp_config.use_orig_params=true actor.model.precision=fp32 \
-      actor.micro_batch_size=$mb actor.global_batch_size=256 \
+      actor.micro_batch_size=$mb actor.global_batch_size=256 data.num_workers=4 \
       runner.max_steps=$steps runner.save_interval=$save \
       "$@" > $out 2>&1 )
 }
