@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step3 完了待ち → Step4 (advantage 条件付き SFT) → Step9 (評価) を自動で進める。
+# Step3 完了待ち → Step4 (advantage 条件付き SFT、2000 ステップ) → Step9 (評価) を自動で進める。
 # 実行: cd /workspace/libero_RL && nohup bash scripts/run_step4_onward.sh > /dev/null 2>&1 &
 # イベントは tmp/step4_events.log、Step4 の出力は tmp/step4_attempt*.log、評価は tmp/step9_eval.log。
 cd /workspace/libero_RL
@@ -10,7 +10,7 @@ SFT_V21=$D/libero10_task0_sft_target3;  SFT_V30=$D/v30/libero10_task0_sft_target
 TRN_V21=$D/libero10_task0_train_v2_merged; TRN_V30=$D/v30/libero10_task0_train_v2_merged
 ADV=meta/advantages_fail300_N10_q30.parquet
 LOGS=RLinf/logs
-MAX_STEPS=30000
+MAX_STEPS=2000
 log() { echo "$(date +%T) $*" >> $EV; }
 : >> $EV; log "start run_step4_onward (pid $$)"
 
@@ -41,6 +41,7 @@ run_step4() { # run_step4 <micro batch> <max_steps> <save_interval> <log file> [
       actor.fsdp_config.use_orig_params=true actor.model.precision=fp32 \
       actor.micro_batch_size=$mb actor.global_batch_size=256 data.num_workers=4 \
       runner.max_steps=$steps runner.save_interval=$save \
+      actor.optim.total_training_steps=$steps actor.optim.lr_warmup_steps=100 \
       "$@" > $out 2>&1 )
 }
 sps_of() { tr '\r' '\n' < $1 | grep -oE "time/step=[0-9.]+" | tail -1 | cut -d= -f2; }
