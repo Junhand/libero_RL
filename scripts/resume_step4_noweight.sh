@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Step4 を global_step_1000 から再開し、データセットの重みなし(data.balance_dataset_weights=false)に切り替えて 2000 ステップまで進める。
 # 終わったら Step9 評価まで自動で行う。落ちたら最新の checkpoint から再開（最大 6 回）、checkpoint は直近 2 つだけ残す。
+# メトリクスは tensorboard と wandb(project libero_RL) の両方に記録する。
 # 実行: cd /workspace/libero_RL && nohup bash scripts/resume_step4_noweight.sh > /dev/null 2>&1 &
 cd /workspace/libero_RL
 ROOT=/workspace/libero_RL
@@ -12,6 +13,8 @@ MAX_STEPS=2000; MB=16; SAVE=100
 BASE_CKPT=$ROOT/$LOGS/20261003-09:38:15-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_1000
 log() { echo "$(date +%T) $*" >> $EV; }
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1
+# wandb の API キーは ~/.bashrc の export 行から読む（キーはログに出さない）
+eval "$(grep '^export WANDB_API_KEY=' ~/.bashrc)"
 TRAIN="data.train_data_paths=[{dataset_path:$D/v30/libero10_task0_sft_target3,advantages_path:$D/libero10_task0_sft_target3/$ADV,weight:1.0},{dataset_path:$D/v30/libero10_task0_train_v2_merged,advantages_path:$D/libero10_task0_train_v2_merged/$ADV,weight:1.0}]"
 run_step4() { # run_step4 <log file> [extra hydra args]
   local out=$1; shift
@@ -23,6 +26,8 @@ run_step4() { # run_step4 <log file> [extra hydra args]
       runner.max_steps=$MAX_STEPS runner.save_interval=$SAVE \
       actor.optim.total_training_steps=$MAX_STEPS actor.optim.lr_warmup_steps=100 \
       data.balance_dataset_weights=false \
+      "runner.logger.logger_backends=[tensorboard,wandb]" \
+      runner.logger.project_name=libero_RL runner.logger.experiment_name=step4_recap_noweight_resume1000 \
       "$@" > $out 2>&1 )
 }
 START=$(date +%s)
