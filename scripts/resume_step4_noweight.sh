@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step4 を global_step_1000 から再開し、データセットの重みなし(data.balance_dataset_weights=false)に切り替えて 2000 ステップまで進める。
+# Step4 を再開して MAX_STEPS まで進める。sft/rollout の重みは BALANCE で切り替える（既定 true = 50:50、false = 重みなし）。
 # 終わったら Step9 評価まで自動で行う。落ちたら最新の checkpoint から再開（最大 6 回）、checkpoint は直近 2 つだけ残す。
 # メトリクスは tensorboard と wandb(project libero_RL) の両方に記録する。
 # 実行中の学習を引き継ぐ場合: ADOPT_PID=<train_vla_sft.py の PID> START=<学習開始の epoch 秒> bash scripts/resume_step4_noweight.sh
@@ -10,8 +10,11 @@ EV=tmp/step4_resume_events.log
 D=$ROOT/data/smolvla_recap
 ADV=meta/advantages_fail300_N10_q30.parquet
 LOGS=RLinf/logs
-MAX_STEPS=2000; MB=16; SAVE=100
-BASE_CKPT=$ROOT/$LOGS/20261003-09:38:15-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_1000
+MAX_STEPS=${MAX_STEPS:-2000}; MB=16; SAVE=100
+# 環境変数で変えられる設定（既定: sft と rollout を 50:50 で釣り合わせる = balance_dataset_weights=true、global_step_1000 から再開）
+BALANCE=${BALANCE:-true}
+EXP_NAME=${EXP_NAME:-step4_recap_balanced_resume1000}
+BASE_CKPT=${BASE_CKPT:-$ROOT/$LOGS/20261003-09:38:15-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_1000}
 log() { echo "$(date +%T) $*" >> $EV; }
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1
 # wandb の API キーは ~/.bashrc の export 行から読む（キーはログに出さない）
@@ -26,18 +29,18 @@ run_step4() { # run_step4 <log file> [extra hydra args]
       actor.micro_batch_size=$MB actor.global_batch_size=256 data.num_workers=4 \
       runner.max_steps=$MAX_STEPS runner.save_interval=$SAVE \
       actor.optim.total_training_steps=$MAX_STEPS actor.optim.lr_warmup_steps=100 \
-      data.balance_dataset_weights=false \
+      data.balance_dataset_weights=$BALANCE \
       "runner.logger.logger_backends=[tensorboard,wandb]" \
-      runner.logger.project_name=libero_RL runner.logger.experiment_name=step4_recap_noweight_resume1000 \
+      runner.logger.project_name=libero_RL runner.logger.experiment_name=$EXP_NAME \
       "$@" > $out 2>&1 )
 }
 START=${START:-$(date +%s)}
 # 整理・再開の対象はこの学習の保存先だけ（他の実験の checkpoint は絶対に触らない）。引き継ぎ時は RUN_DIR を指定する
 RUN_DIR=${RUN_DIR:-'*-libero10_task0_recap_smolvla'}
-ckpts() { ls -d $LOGS/$RUN_DIR/step4_recap_noweight_resume1000/checkpoints/global_step_* 2>/dev/null | while read d; do [ $(stat -c %Y "$d") -ge $START ] && echo "${d##*_} $d"; done | sort -n; }
+ckpts() { ls -d $LOGS/$RUN_DIR/$EXP_NAME/checkpoints/global_step_* 2>/dev/null | while read d; do [ $(stat -c %Y "$d") -ge $START ] && echo "${d##*_} $d"; done | sort -n; }
 latest_ckpt() { ckpts | tail -1 | cut -d' ' -f2-; }
 prune() { ckpts | head -n -2 | cut -d' ' -f2- | while read d; do rm -rf "$d"; log "pruned $d"; done; }
-log "start: resume from $BASE_CKPT, balance_dataset_weights=false, MB=$MB SAVE=$SAVE max_steps=$MAX_STEPS"
+log "start: resume from $BASE_CKPT, balance_dataset_weights=$BALANCE, exp=$EXP_NAME, MB=$MB SAVE=$SAVE max_steps=$MAX_STEPS"
 for attempt in 1 2 3 4 5 6; do
   if [ -n "$ADOPT_PID" ] && [ "$attempt" = 1 ]; then
     P=$ADOPT_PID; log "実行中の学習(pid $P)を引き継ぐ"
@@ -56,12 +59,13 @@ R=$(latest_ckpt); S=${R##*_}
 [ "${S:-0}" -ge $MAX_STEPS ] || { log "ABORT: Step4 が完了しなかった"; exit 1; }
 W=$ROOT/$R/actor/model_state_dict/full_weights.pt
 [ -f "$W" ] || { log "ABORT: $W がない"; exit 1; }
+W_LOG=tmp/step9_eval_${EXP_NAME}.log
 log "Step9 評価 開始 ckpt=$W"
 ( source RLinf/.venv-smolvla/bin/activate; cd RLinf
   bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
     rollout.model.model_path=$ROOT/models/smolvla_libero runner.ckpt_path=$W \
     rollout.model.smolvla.advantage_prompt=true \
     rollout.model.smolvla.vlm_model_name=$ROOT/models/SmolVLM2-500M-Video-Instruct \
-    "+env.eval.task_id_filter=[0]" env.eval.total_num_envs=10 env.eval.max_steps_per_rollout_epoch=2600 ) > tmp/step9_eval_final.log 2>&1
-log "Step9 評価 終了: $(tr '\r' '\n' < tmp/step9_eval_final.log | grep -oE "'eval/success_once': array\([0-9.]+" | tail -1) (ベースライン 0.40、1000 ステップ時 0.46)"
+    "+env.eval.task_id_filter=[0]" env.eval.total_num_envs=10 env.eval.max_steps_per_rollout_epoch=2600 ) > $W_LOG 2>&1
+log "Step9 評価 終了: $(tr '\r' '\n' < $W_LOG | grep -oE "'eval/success_once': array\([0-9.]+" | tail -1) (ベースライン 0.40、1000 ステップ時 0.46、重みなし2000 ステップ時 0.44)"
 log "ALL DONE"
