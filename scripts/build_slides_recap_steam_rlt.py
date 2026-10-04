@@ -301,24 +301,80 @@ def style_chart(chart, size=12):
 
 
 # ================================================================ 1. title
+import os
+ASSET_BG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "title_bg_blue_mesh.jpg")
+if not os.path.exists(ASSET_BG):
+    ASSET_BG = "/workspace/libero_RL/scripts/assets/title_bg_blue_mesh.jpg"
+
+
+def _plain_run(p, text, size, color, font, bold=False):
+    r = p.add_run()
+    r.text = text
+    f = r.font
+    f.size = Pt(size)
+    f.bold = bold
+    f.name = font
+    f.color.rgb = color
+    rPr = r._r.get_or_add_rPr()
+    for tag in ("a:ea", "a:cs"):
+        el = rPr.find(qn(tag))
+        if el is None:
+            el = etree.SubElement(rPr, qn(tag))
+        el.set("typeface", font)
+    return r
+
+
 s = prs.slides.add_slide(BLANK)
-bg = s.background.fill
-bg.solid()
-bg.fore_color.rgb = NAVY
-textbox(s, 0.9, 1.55, 11.5, 1.9,
-        [dict(text="VLA のための強化学習:", size=40, bold=True, color=WHITE, space=2),
-         dict(text="RECAP・STEAM・RL Token", size=44, bold=True, color=WHITE, space=2)], name="title")
-textbox(s, 0.9, 3.6, 11.5, 0.9,
-        [dict(text="smolVLA と LIBERO-10 Task 0 で、3 つの手法を実装して比べる", size=22, color=RGBColor(0xCA, 0xDC, 0xFC))],
-        name="subtitle")
-for i, (t, sub) in enumerate([("RECAP", "価値関数で advantage を作り、方策に条件付ける"),
-                              ("STEAM", "時間オフセットの自己教師ありアンサンブル"),
-                              ("RL Token", "凍結 VLA の上で、軽い actor-critic を学習")]):
-    box(s, 0.9 + i * 4.0, 4.75, 3.75, 1.2, [dict(text=t, size=20, bold=True, color=WHITE), dict(text=sub, size=14)],
-        fill=RGBColor(0x1E, 0x35, 0x56), line=RGBColor(0x5B, 0x9B, 0xE6), size=14, color=RGBColor(0xCA, 0xDC, 0xFC),
-        name=f"chip {t}")
-textbox(s, 0.9, 6.5, 11.5, 0.5,
-        [dict(text="libero_RL プロジェクト  |  2026/10/04", size=16, color=RGBColor(0xCA, 0xDC, 0xFC))], name="date")
+bgpic = s.shapes.add_picture(ASSET_BG, 0, 0, prs.slide_width, prs.slide_height)
+bgpic.name = "background (blue mesh)"
+band = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, Inches(2.39))
+band.name = "title band"
+band.fill.solid()
+band.fill.fore_color.rgb = RGBColor(0x33, 0x33, 0x33)
+band.line.fill.background()
+
+# series logo (text, Impact, per-letter colours) at the left of the band
+logo = s.shapes.add_textbox(Inches(0.2), Inches(0.55), Inches(3.02), Inches(1.04))
+logo.name = "series logo"
+tf = logo.text_frame
+tf.word_wrap = False
+tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+p = tf.paragraphs[0]
+p.alignment = PP_ALIGN.CENTER
+for t, c in (("D", RGBColor(0xE9, 0x4C, 0x3F)), ("EEP ", WHITE), ("L", RGBColor(0xC8, 0xCC, 0x41)),
+             ("EARNING ", WHITE), ("JP", RGBColor(0x48, 0x97, 0xF6))):
+    _plain_run(p, t, 28, c, "Impact")
+p2 = tf.add_paragraph()
+p2.alignment = PP_ALIGN.CENTER
+_plain_run(p2, "[DL Papers]", 28, WHITE, "Impact")
+
+# title: white Arial, centred, two lines
+tt = s.shapes.add_textbox(Inches(3.22), Inches(0.17), Inches(10.0), Inches(1.0))
+tt.name = "title"
+tf = tt.text_frame
+tf.word_wrap = True
+for i, line_ in enumerate(("RECAP, STEAM, and RL Token:", "Reinforcement Learning for Vision-Language-Action Models")):
+    p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+    p.alignment = PP_ALIGN.CENTER
+    _plain_run(p, line_, 26, WHITE, "Arial")
+
+# presenter / affiliation block (3 lines, left aligned)
+au = s.shapes.add_textbox(Inches(4.27), Inches(1.15), Inches(8.6), Inches(1.1))
+au.name = "presenter block"
+tf = au.text_frame
+tf.word_wrap = True
+for i, line_ in enumerate(("smolVLA × LIBERO-10 Task 0 での実験", "RLinf / libero_RL プロジェクト", "2026/10/04")):
+    p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+    p.alignment = PP_ALIGN.LEFT
+    _plain_run(p, line_, 20, WHITE, "Yu Gothic")
+
+# URL at the bottom right
+url = s.shapes.add_textbox(Inches(10.43), Inches(6.62), Inches(2.91), Inches(0.4))
+url.name = "url"
+tf = url.text_frame
+p = tf.paragraphs[0]
+p.alignment = PP_ALIGN.LEFT
+_plain_run(p, "http://deeplearning.jp/", 16, WHITE, "Yu Gothic")
 s.notes_slide.notes_text_frame.text = (
     "RECAP、STEAM、RL Token の 3 手法を紹介し、smolVLA (LIBERO-10 Task 0) での実験結果を比較します。")
 
