@@ -10,7 +10,7 @@ GPU は、主に RTX 6000 Ada（48GB）。一部の評価と実験 S は、別�
 - 最も低かったのは、positive を上位 10% に絞った実験 R10（0.32）。ただし、これもベースラインとの差は有意ではない。
 - 評価の誤差が大きく（50 試行で標準誤差 約 0.07）、約 ±0.1 以内の差は、検出できない。
 
-関連: STEAM の結果は `steam_smolvla_libero10_task0.md`。方法の背景は `docs/pi06_RECAP_ja.md`、引き継ぎは `docs/handoff_step2_onward.md`。
+作業の全記録（何をしたか、どこに何があるか、事故）は `docs/work_log_recap_gpu6000ada_2026-10-02_to_10-04.md`。関連: STEAM の結果は `steam_smolvla_libero10_task0.md`。方法の背景は `docs/pi06_RECAP_ja.md`、引き継ぎは `docs/handoff_step2_onward.md`。
 
 ---
 
@@ -68,7 +68,7 @@ GPU は、主に RTX 6000 Ada（48GB）。一部の評価と実験 S は、別�
 - データ: sft（全 30 本）+ train 11 個（各 `weight: 1.0`、`type: rollout`）。eval は 3 個（各 300 サンプル）。
 - 設定: global batch 256、micro batch 16、`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`、`runner.max_steps=4000`、300 ステップごとに保存と eval。
 - 時間: 2026-10-02 08:13 〜 10-03 04:54（20 時間 38 分）。約 17〜20 秒/ステップ（GPU のサーマルスロットリングで、クロックが 465〜2295 MHz に変動）。エラー・メモリ不足・再起動なし。
-- 最終 checkpoint: `RLinf/logs/recap_value_model_sft-20261002-08:13:11/step2_value_sft_v2/checkpoints/global_step_4000`（6.8GB）。
+- 最終 checkpoint: `RLinf/logs/value_sft/recap_value_model_sft-20261002-08:13:11/step2_value_sft_v2/checkpoints/global_step_4000`（6.8GB）。
 - 最終 eval（3 セット平均）: **value_spearman 0.963、loss 2.298、cat_acc_best 0.325、cat_acc_neighbor 0.456、mae 0.066**。セットごとの value_spearman は、0.985（m0）、0.982（m1）、0.921（m2）。
 - 最終の train: loss 2.55、value_spearman 0.861。
 
