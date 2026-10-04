@@ -424,7 +424,7 @@ bash scripts/run_rlinf_vla_sft.sh libero10_task0_recap_smolvla \
   actor.fsdp_config.use_orig_params=true actor.model.precision=fp32
 ```
 
-- 主な設定（`libero10_task0_recap_smolvla.yaml`）: 30,000 ステップ、global batch 256（micro batch 32）、lr 1e-5（cosine、warmup 1,000）、float32、`unconditional_prob: 0.1`、`balance_dataset_weights: true`（sft と rollout を件数によらず 1:1 で混ぜる。RLinf の CFG 学習と同じ）。
+- 主な設定（`libero10_task0_recap_smolvla.yaml`）: 30,000 ステップ、global batch 256（micro batch 32）、lr 1e-5（cosine、warmup 1,000）、float32、`unconditional_prob: 0.1`、`balance_dataset_weights`（**smolVLA 用ローダでは RLinf 本体と意味が逆**。`false` = 各フレームが同じ確率で選ばれ、sft : rollout はフレーム数の比になる。これが RLinf 公式の既定（`ReCapMixtureDataset` の `balance=true`）と同じ挙動で、元論文も全データを一様に扱う。`true` = データセットごとに `weight` で選ばれ、件数によらず sft と rollout が 1:1 になる）。**このプロジェクトでは `false` を使う**。
 - sft（20fps）と rollout（10fps）は fps が違うが、どちらも 1 行が 1 制御ステップなので、行動チャンクはどちらも続く 50 行になる。
 - 正規化の統計は smolvla_libero のものをそのまま使う。
 - チェックポイントは 3,000 ステップごとに `RLinf/logs/<timestamp>-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_<N>/actor/model_state_dict/full_weights.pt` に保存される。

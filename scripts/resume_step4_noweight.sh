@@ -11,9 +11,12 @@ D=$ROOT/data/smolvla_recap
 ADV=meta/advantages_fail300_N10_q30.parquet
 LOGS=RLinf/logs
 MAX_STEPS=${MAX_STEPS:-2000}; MB=16; SAVE=100
-# 環境変数で変えられる設定（既定: sft と rollout を 50:50 で釣り合わせる = balance_dataset_weights=true、global_step_1000 から再開）
-BALANCE=${BALANCE:-true}
-EXP_NAME=${EXP_NAME:-step4_recap_balanced_resume1000}
+# 環境変数で変えられる設定（既定: 重みなし = balance_dataset_weights=false、global_step_1000 から再開）
+# 注意: smolVLA 用ローダ(smolvla_cfg.py)の balance は RLinf 本体(ReCapMixtureDataset)と意味が逆。
+#   false = 各フレームが同じ確率で選ばれる（フレーム数の比。RLinf 公式の既定 balance=true と同じ挙動。sft 約 0.13%）
+#   true  = データセットごとに weight で選ばれる（sft と rollout が 50:50）
+BALANCE=${BALANCE:-false}
+EXP_NAME=${EXP_NAME:-step4_recap_framewise_resume1000}
 BASE_CKPT=${BASE_CKPT:-$ROOT/$LOGS/20261003-09:38:15-libero10_task0_recap_smolvla/smolvla_recap_sft/checkpoints/global_step_1000}
 log() { echo "$(date +%T) $*" >> $EV; }
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1

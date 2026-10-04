@@ -121,3 +121,11 @@ Step4 のデータローダは、`balance_dataset_weights: true` のとき、各
 - **Step3 は、`libero10_task0_train_v2_merged`（v2.1）と `libero10_task0_sft_target3`（v2.1）に対して実行する**（番号がマージ前と変わっているので、元の 11 個の train には実行しない）。
   Step4 の設定は、v3.0 の 2 個、weight は両方 1.0 の予定。
 - 増えたディスク量: 約 22GB（v2.1 マージ 11GB、v3.0 変換 11GB）。
+
+## 9. 訂正: sft と rollout の混合比（2026-10-04）
+
+- §7・§8 の「`balance_dataset_weights: true` で sft : rollout = 1 : 1」は、**RLinf 本体（`ReCapMixtureDataset`）の挙動とは逆**だった。
+  - RLinf 本体: `balance=true` で、選ばれる確率は `weight × フレーム数` に比例（= フレーム均等）。公式の設定は `true` + 両方 `weight: 1.0` なので、sft はごく少量（約 0.5%）。元論文は、デモと自律データを区別した比率を規定せず、全データを一様に扱う。
+  - smolVLA 用ローダ（`smolvla_cfg.py`、プロジェクトのパッチ）: `true` で `weight ÷ フレーム数`（= データセット均等、50:50）。意味が逆になっている。
+- 結果: Step4 の 1〜1,000 ステップは sft が 50%（1 フレーム約 300 回の繰り返し）で、公式から外れていた。1,001〜2,000 ステップは `balance=false`（フレーム均等、sft 約 0.13%）で、公式に近い。
+- 方針: Step4 は `data.balance_dataset_weights=false` を使う（`scripts/resume_step4_noweight.sh` の既定）。`smolvla_cfg.py` 自体は直していない。
