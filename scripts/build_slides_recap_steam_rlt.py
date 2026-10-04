@@ -505,28 +505,6 @@ textbox(s, 0.6, 4.95, 12.1, 1.1, [
 ], size=15)
 key_box(s, "論文の内容（引用）と、私たちの実験（smolVLA）を、スライド上で区別して示す")
 
-# ================ old 4
-s = new_slide("背景: なぜ VLA に強化学習か", "RECAP と STEAM は評価者（advantage の作り方）だけが違う。RL Token は、オンラインで行動を洗練する、という整理が主題。")
-textbox(s, 0.6, 1.1, 5.6, 4.9, [
-    (0, "**VLA は、模倣学習（SFT）で多様な技能を学べる**"),
-    (1, "ただし、実タスクが要求する精度・速度・失敗からの回復には届かない"),
-    (0, "**強化学習（RL）で、自分の経験から改善したい**"),
-    (1, "10 億パラメータ級のモデル全体を、オンラインで更新するのは、計算コストもサンプル効率も悪い"),
-    (1, "flow matching の行動生成は、対数尤度が扱いにくく、方策勾配法（PPO など）を適用しにくい"),
-    (0, "**3 手法の位置づけ**: RECAP と STEAM は評価者だけが違う。RL Token は、行動を洗練する"),
-], size=17)
-cards = [
-    ("RECAP", "方策の学習目標", "評価者は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
-    ("STEAM", "方策の学習目標", "評価者は、時間オフセットを当てる critic のアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
-    ("RL Token", "行動の洗練", "VLA は凍結。読み出しトークンの上の小さな actor-critic が、オンライン RL で VLA の行動を改善する"),
-]
-for i, (t, where, desc) in enumerate(cards):
-    y = 1.1 + i * 1.7
-    box(s, 6.5, y, 2.0, 1.5, [f"^^{t}^^"], fill=PALE, line=BLUE, size=20, name=f"card {t}")
-    box(s, 8.6, y, 4.1, 1.5, [f"**{where}**", desc], fill=WHITE, line=LGRAY, size=14,
-        align=PP_ALIGN.LEFT, name=f"desc {t}")
-key_box(s, "RECAP と STEAM は評価者だけが違う。RL Token は、オンラインで行動を洗練する")
-
 # ================ new basics
 s = new_slide("強化学習の基本用語", "強化学習を知らない人向けの前提。『やってみて、結果から、良い行動を増やす』が一言。")
 node(s, 0.6, 1.2, 2.4, 1.2, "エージェント", ["方策 π（= VLA）が", "行動を決める"], kind="data", size=15, name="agent")
@@ -551,6 +529,28 @@ for i, (t, d) in enumerate(terms):
     box(s, 6.9, y, 1.9, 0.74, t, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"term {t}")
     textbox(s, 8.9, y - 0.02, 3.9, 0.78, [dict(text=d, size=13)], anchor=MSO_ANCHOR.MIDDLE, name=f"def {t}")
 key_box(s, "RL は、結果から良い行動を増やす学習。RECAP・STEAM は、評価者（critic）で advantage を作る")
+
+# ================ old 4
+s = new_slide("背景: なぜ VLA に強化学習か", "RECAP と STEAM は評価者（advantage の作り方）だけが違う。RL Token は、オンラインで行動を洗練する、という整理が主題。")
+textbox(s, 0.6, 1.1, 5.6, 4.9, [
+    (0, "**VLA は、模倣学習（SFT）で多様な技能を学べる**"),
+    (1, "ただし、実タスクが要求する精度・速度・失敗からの回復には届かない"),
+    (0, "**強化学習（RL）で、自分の経験から改善したい**"),
+    (1, "10 億パラメータ級のモデル全体を、オンラインで更新するのは、計算コストもサンプル効率も悪い"),
+    (1, "flow matching の行動生成は、対数尤度が扱いにくく、方策勾配法（PPO など）を適用しにくい"),
+    (0, "**3 手法の位置づけ**: RECAP と STEAM は評価者だけが違う。RL Token は、行動を洗練する"),
+], size=17)
+cards = [
+    ("RECAP", "方策の学習目標", "評価者は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
+    ("STEAM", "方策の学習目標", "評価者は、時間オフセットを当てる critic のアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
+    ("RL Token", "行動の洗練", "VLA は凍結。読み出しトークンの上の小さな actor-critic が、オンライン RL で VLA の行動を改善する"),
+]
+for i, (t, where, desc) in enumerate(cards):
+    y = 1.1 + i * 1.7
+    box(s, 6.5, y, 2.0, 1.5, [f"^^{t}^^"], fill=PALE, line=BLUE, size=20, name=f"card {t}")
+    box(s, 8.6, y, 4.1, 1.5, [f"**{where}**", desc], fill=WHITE, line=LGRAY, size=14,
+        align=PP_ALIGN.LEFT, name=f"desc {t}")
+key_box(s, "RECAP と STEAM は評価者だけが違う。RL Token は、オンラインで行動を洗練する")
 
 # ================ old 5
 s = new_slide("実験設定", "評価は 50 エピソード。標準誤差が大きいことを最初に断っておく。")
@@ -934,47 +934,21 @@ eq_block(s, 4.81, 4, "**actor**: Q が大きい行動を出す。ただし、VLA
 key_box(s, "actor は、VLA の提案 ã を条件に、ゼロからではなく、強い初期案を改善する", y=6.3)
 
 # ================ old 14
-s = new_slide("RL Token: smolVLA での実装（私たちの実験）", "グラフの 0.46 は、この RL プロトコルでの VLA のみの評価（50 エピソード）。")
-textbox(s, 0.6, 1.1, 6.2, 5.0, [
-    (0, "**RL token**: 凍結した smolVLA の prefix の隠れ状態（241 × 960）から、RL token を作る"),
-    (0, "**RL の対象**: タスクの局面ごとの actor-critic（1 つ目の把持 → 2 つ目の把持の「2 局面ゲート」）。それ以外は VLA が実行"),
-    (0, "**オンライン学習**: 3 環境で、更新/データ比 5、探索ノイズ σ = 0.05。1・2 つ目の把持の actor は **750 エポック（約 8 時間）**、2 つ目専用は **400 エポック（5.4 時間）**。GPU は **RTX A5000（24GB）**"),
-    (0, "**失敗の分析**: 1 つ目の把持は確立。残る失敗は、2 つ目の把持が最大"),
-    (1, "→ 2 つ目専用の actor と、空振り（何も挟まずに閉じる）への罰 −0.2"),
-    (0, "**RL token**: 6,000 step、約 25 分。**actor の重み**は、約 5 MB と軽量"),
+s = new_slide("RL Token: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step9）。RECAP・STEAM の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
+steps = ["Step1\n特徴量の抽出", "Step2\nRL token の学習", "Step3\nactor-critic の学習", "Step4\n2 つ目専用の actor", "Step9\nシミュレータで評価"]
+for i, t in enumerate(steps):
+    x = 0.6 + i * 2.5
+    box(s, x, 1.1, 2.2, 0.95, t.split("\n"), fill=BLUE if i < 4 else GREEN, line=None, size=14, color=WHITE, bold=True,
+        name=f"step {i}")
+    if i < 4:
+        arrow(s, x + 2.2, 1.57, x + 2.5, 1.57, color=GRAY)
+textbox(s, 0.6, 2.3, 12.1, 3.9, [
+    (0, "**Step1**: 凍結した smolVLA に、デモとロールアウトの動画フレームを通し、画像トークン（128 × 960）を保存（把持の前後を中心に抽出。**1 データセット約 17 分**、RTX A5000）"),
+    (0, "**Step2**: 小さな encoder-decoder が、保存した特徴から RL token を作る（再構成損失で学習。**6,000 step、約 25 分**）。再構成の val MSE は 0.073（平均を出す基準は 0.269）"),
+    (0, "**Step3**: 1・2 つ目の把持の actor-critic を、オンライン RL で学習（3 環境、更新/データ比 5、探索ノイズ σ = 0.05。**750 エポック、約 8.2 時間**、RTX A5000 24GB）。それ以外は VLA が実行"),
+    (0, "**Step4**: 残る失敗は 2 つ目の把持が最大 → 2 つ目専用の actor を、空振り（何も挟まずに閉じる）への罰 −0.2 つきで学習（1 つ目は Step3 の actor を固定。**400 エポック、5.4 時間**、RTX A5000）"),
+    (0, "**Step9**: success_once は **0.68**（最良。VLA のみ 0.46、1 つ目だけ RL 0.62、2 局面 0.66）。2 つ目を VLA に任せると 0.60。actor の重みは約 5 MB"),
 ], size=16)
-cd = CategoryChartData()
-cd.categories = ["VLA のみ", "1 つ目を\nRL", "2 局面\nゲート", "+ 2 つ目専用\n+ 空振り罰"]
-cd.add_series("success_once", (0.46, 0.62, 0.66, 0.68))
-gf = s.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(7.0), Inches(1.1), Inches(5.8), Inches(4.9), cd)
-ch = gf.chart
-style_chart(ch, 12)
-ch.has_legend = False
-ch.has_title = True
-ch.chart_title.text_frame.text = "RL Token（smolVLA）の success_once"
-ch.chart_title.text_frame.paragraphs[0].runs[0].font.size = Pt(13)
-ch.chart_title.text_frame.paragraphs[0].runs[0].font.bold = True
-va = ch.value_axis
-va.minimum_scale = 0
-va.maximum_scale = 0.8
-va.major_unit = 0.2
-va.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
-va.tick_labels.font.size = Pt(12)
-ch.category_axis.tick_labels.font.size = Pt(12)
-pl = ch.plots[0]
-pl.gap_width = 60
-pl.has_data_labels = True
-pl.data_labels.show_value = True
-pl.data_labels.number_format = "0.00"
-pl.data_labels.number_format_is_linked = False
-pl.data_labels.position = XL_LABEL_POSITION.OUTSIDE_END
-pl.data_labels.font.size = Pt(14)
-pl.data_labels.font.bold = True
-ser = pl.series[0]
-for i, col in enumerate((LGRAY, SLATE, BLUE, GREEN)):
-    pt = ser.points[i]
-    pt.format.fill.solid()
-    pt.format.fill.fore_color.rgb = col
 key_box(s, "凍結した VLA の上の小さな actor-critic だけで、success_once が 0.46 → 0.68 に向上した")
 
 # ================ old 15
