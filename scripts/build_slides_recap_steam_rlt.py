@@ -708,7 +708,7 @@ probs = [math.exp(-((b + 0.30) ** 2) / (2 * 0.12 ** 2)) for b in bins]
 tot = sum(probs)
 probs = [p / tot for p in probs]
 cd = CategoryChartData()
-cd.categories = [f"{b:.2f}" if i % 4 == 0 else "" for i, b in enumerate(bins)]
+cd.categories = [" " for _ in bins]
 cd.add_series("確率", probs)
 gf = s.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.6), Inches(1.1), Inches(6.9), Inches(3.6), cd)
 ch = gf.chart
@@ -727,6 +727,29 @@ va.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
 va.tick_labels.font.size = Pt(11)
 va.has_major_gridlines = True
 ch.category_axis.tick_labels.font.size = Pt(11)
+from pptx.enum.chart import XL_TICK_LABEL_POSITION as _TLP
+ch.category_axis.tick_label_position = _TLP.NONE
+# manual x labels: the plot area of the chart is laid out by the renderer, so fix it explicitly
+from lxml import etree as _et
+_plot = ch._chartSpace.find(qn("c:chart")).find(qn("c:plotArea"))
+_lay = _plot.find(qn("c:layout"))
+if _lay is None:
+    _lay = _et.SubElement(_plot, qn("c:layout"))
+    _plot.insert(0, _lay)
+for _c in list(_lay):
+    _lay.remove(_c)
+_ml = _et.SubElement(_lay, qn("c:manualLayout"))
+for _tag, _val in (("layoutTarget", "inner"), ("xMode", "edge"), ("yMode", "edge"), ("x", "0.09"), ("y", "0.14"), ("w", "0.89"), ("h", "0.66")):
+    _e = _et.SubElement(_ml, qn("c:" + _tag))
+    _e.set("val", _val)
+_cx, _cy, _cw, _chh = 0.6, 1.1, 6.9, 3.6          # chart frame (inches)
+_px = _cx + _cw * 0.09; _pw = _cw * 0.89         # inner plot area
+_py_bottom = _cy + _chh * (0.14 + 0.66)
+for _k in range(0, 21, 4):
+    _val = -1.0 + _k * 0.05
+    _lab = (chr(0x2212) + chr(0x2060) + "%.1f" % abs(_val)) if _val < -1e-9 else "0.0"
+    _xc = _px + _pw * (_k + 0.5) / 21
+    textbox(s, _xc - 0.4, _py_bottom + 0.02, 0.8, 0.28, [dict(text=_lab, size=11, align=PP_ALIGN.CENTER, color=BLACK)], margin=0, name=f"xlabel {_k}")
 textbox(s, 0.6, 4.7, 6.9, 0.35, [dict(text="横軸: ビンの値（−1 = 最悪、0 = 成功）。縦軸: そのビンの確率", size=12, color=GRAY)])
 box(s, 7.8, 1.1, 4.9, 1.3, [dict(text="① 画像と指示文を、価値モデルに入れる", size=14, bold=True, color=BLUE),
                               dict(text="出力: 201 個のビンの確率（足して 1）", size=13)],
