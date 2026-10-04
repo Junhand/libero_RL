@@ -658,8 +658,8 @@ textbox(s, 0.6, 3.4, 5.9, 0.9, [
     (0, "return_t = r_t + r_{t+1} + … + r_最後（割引なし）"),
     (0, "早く成功するほど、return は 0 に近い"),
 ], size=13, space=3)
-textbox(s, 0.6, 4.25, 5.9, 0.4, [dict(text="③ 正規化（価値モデルの正解にするため）", size=15, bold=True, color=BLUE)])
-textbox(s, 0.6, 4.65, 5.9, 0.6, [(0, "最大 520 フレームの失敗の最小値 −819 で割り、[−1, 0] にそろえる（0 が成功、−1 が最悪）。価値モデルは、この値を当てる")], size=13)
+textbox(s, 0.6, 4.25, 5.9, 0.4, [dict(text="③ 正規化（Critic の正解にするため）", size=15, bold=True, color=BLUE)])
+textbox(s, 0.6, 4.65, 5.9, 0.6, [(0, "最小値 −819 で割り、[−1, 0] にそろえる（0 が成功、−1 が最悪）。Critic（価値モデル）は、この値を当てる")], size=13)
 node(s, 0.6, 5.3, 2.85, 0.85, "成功（260 フレーム）", ["100 フレーム目: −159 → −0.19"], kind="out", size=12, name="ex succ")
 node(s, 3.65, 5.3, 2.85, 0.85, "失敗（520 フレーム）", ["100 フレーム目: −719 → −0.88"], kind="train", size=12, name="ex fail")
 from pptx.chart.data import XyChartData
@@ -715,7 +715,7 @@ ch = gf.chart
 style_chart(ch, 12)
 ch.has_legend = False
 ch.has_title = True
-ch.chart_title.text_frame.text = "価値モデルの出力: 各ビンの確率（例。実際は 201 個）"
+ch.chart_title.text_frame.text = "Critic（価値モデル）の出力: 各ビンの確率（例。実際は 201 個）"
 ch.chart_title.text_frame.paragraphs[0].runs[0].font.size = Pt(13)
 ch.chart_title.text_frame.paragraphs[0].runs[0].font.bold = True
 ch.plots[0].gap_width = 30
@@ -751,7 +751,7 @@ for _k in range(0, 21, 4):
     _xc = _px + _pw * (_k + 0.5) / 21
     textbox(s, _xc - 0.4, _py_bottom + 0.02, 0.8, 0.28, [dict(text=_lab, size=11, align=PP_ALIGN.CENTER, color=BLACK)], margin=0, name=f"xlabel {_k}")
 textbox(s, 0.6, 4.7, 6.9, 0.35, [dict(text="横軸: ビンの値（−1 = 最悪、0 = 成功）。縦軸: そのビンの確率", size=12, color=GRAY)])
-box(s, 7.8, 1.1, 4.9, 1.3, [dict(text="① 画像と指示文を、価値モデルに入れる", size=14, bold=True, color=BLUE),
+box(s, 7.8, 1.1, 4.9, 1.3, [dict(text="① 画像と指示文を、Critic（価値モデル）に入れる", size=14, bold=True, color=BLUE),
                               dict(text="出力: 201 個のビンの確率（足して 1）", size=13)],
     fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name="step1")
 box(s, 7.8, 2.55, 4.9, 1.4, [dict(text="② 期待値をとる", size=14, bold=True, color=BLUE),
@@ -768,17 +768,17 @@ box(s, 0.6, 5.2, 12.1, 0.9, [dict(text="使い道: 2 つのフレームの V の
 key_box(s, "価値 V は、ビンの確率の期待値。「成功まであとどれくらいか」を、1 つの数値で表す", y=6.3, h=0.62)
 
 # ================ new recap_value
-s = new_slide("RECAP ①: 価値関数の学習（入力・出力・更新）", "Step2。価値モデルだけを更新する。VLA はまだ触らない。")
-io_diagram(s, ("入力", ["カメラ画像", "指示文"]), ("価値モデル", ["SigLIP2 + Gemma3-270M", "更新する"]),
+s = new_slide("RECAP ①: Critic（価値モデル）の学習（入力・出力・更新）", "Step2。Critic（価値モデル）だけを更新する。VLA はまだ触らない。")
+io_diagram(s, ("入力", ["カメラ画像", "指示文"]), ("Critic（価値モデル）", ["SigLIP2 + Gemma3-270M", "更新する"]),
            ("出力", ["201 個のビンの確率", "（成功への近さの分布）"]), ("V（価値）", ["確率の期待値", "例: −0.12"]),
            ("正解", ["その後の実際の return を", "1 つのビンにしたもの"]), ("損失", ["予想の分布と", "正解のズレ"]))
 spec_table(s, 0.6, 4.15, 12.1, [
     ["入力", "ロールアウトの 1 フレーム（カメラ画像、指示文）。成功・失敗の両方のデータを使う"],
     ["出力", "201 個のビンの確率。確率の期待値が、価値 V（−1 〜 0。0 が成功）"],
     ["正解", "そのフレームから先の return（1 ステップ −1、失敗は終端で −300）を正規化し、ビンにしたもの"],
-    ["損失 / 更新", "交差エントロピーを小さくするよう、価値モデルのパラメータを更新（VLA は更新しない）"],
+    ["損失 / 更新", "交差エントロピーを小さくするよう、Critic（価値モデル）のパラメータを更新（VLA は更新しない）"],
 ], size=13, row_h=0.42, label_w=1.6)
-key_box(s, "価値モデルは、画像を見て「成功まであとどれくらいか」を当てる問題として学習する", y=6.35, h=0.6)
+key_box(s, "Critic（価値モデル）は、画像を見て「成功まであとどれくらいか」を当てる問題として学習する", y=6.35, h=0.6)
 
 # ================ new recap_adv
 s = new_slide("RECAP ②: advantage の計算と「良い/悪い」の札", "Step3。モデルの更新はなく、データに札を付ける処理。")
@@ -837,7 +837,7 @@ key_box(s, "方策は「札あり」と「札なし」の両方を表現でき�
 
 # ================ old 8
 s = new_slide("RECAP: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。名称は私たちのパイプラインの番号。【発表者向け】0.50 は、advantage プロンプトなしで評価した最良値。プロンプトあり（Advantage: positive）では 0.48。Step4 は途中段階（2,000 step）。")
-steps = ["Step1\nreturn の計算", "Step2\n価値モデルの学習", "Step3\nadvantage の計算", "Step4\n条件付き SFT", "Step5\nシミュレータで評価"]
+steps = ["Step1\nreturn の計算", "Step2\nCritic（価値モデル）の学習", "Step3\nadvantage の計算", "Step4\n条件付き SFT", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
     box(s, x, 1.1, 2.2, 0.95, t.split("\n"), fill=BLUE if i < 4 else GREEN, line=None, size=14, color=WHITE, bold=True,
@@ -845,13 +845,13 @@ for i, t in enumerate(steps):
     if i < 4:
         arrow(s, x + 2.2, 1.57, x + 2.5, 1.57, color=GRAY)
 textbox(s, 0.6, 2.3, 12.1, 3.9, [
-    (0, "**Step1**: 報酬は 1 ステップごとに −1、失敗は終端で −300。return を [−819, 0] に正規化"),
-    (0, "**Step2**: 価値モデル（SigLIP2 + Gemma3-270M）が、201 ビンの分布を予測。**成功した時点で打ち切る設定で収集した 4,122 本**で学習（**4,000 step、20.6 時間**、RTX 6000 Ada 48GB）"),
+    (0, "**Step1**: 報酬は 1 ステップごとに −1、失敗は終端で −300。return を [−1, 0] に正規化（元の範囲は [−819, 0]）"),
+    (0, "**Step2**: Critic（価値モデル。SigLIP2 + Gemma3-270M）が、201 ビンの分布を予測。**成功した時点で打ち切る設定で収集した 4,122 本**で学習（**4,000 step、20.6 時間**、RTX 6000 Ada 48GB）"),
     (0, "**Step3**: A = r_{t:t+10} + V(o_{t+10}) − V(o_t)。上位 30% を positive（人のデモは全て positive）。閾値は全データセットを結合して 1 つに決める（**62.3 万サンプル、4.2 時間**、RTX 6000 Ada 48GB）"),
     (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価も positive プロンプトで行う（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
     (0, "**Step5**: success_once は **0.50**（最良。ベース 0.40）。Step4 は途中段階（2,000 step 前後、計画は 30,000 step）で、評価は 0.44〜0.50 の範囲で変動"),
 ], size=17)
-key_box(s, "return の計算 → 価値モデルの学習 → advantage の計算 → 札付き SFT → 評価、の順に進める")
+key_box(s, "return の計算 → Critic（価値モデル）の学習 → advantage の計算 → 札付き SFT → 評価、の順に進める")
 
 # ================ new steam_prop
 s = new_slide("STEAM: 提案（論文）", "報酬ラベル不要で、専門家デモだけから advantage を作る点が特徴。")
@@ -1124,7 +1124,7 @@ A5 = "RTX A5000（24GB）"
 ADA = "RTX 6000 Ada（48GB）"
 rows = [
     ["手法", "段階", "学習ステップ数", "バッチ", "所要時間", "GPU"],
-    ["RECAP", "Step2: 価値モデル", "4,000 step", "256", "20.6 時間（18.6 秒/step）", ADA],
+    ["RECAP", "Step2: Critic（価値モデル）", "4,000 step", "256", "20.6 時間（18.6 秒/step）", ADA],
     ["RECAP", "Step3: advantage 計算", "62.3 万サンプル（推論）", "—", "4.2 時間（41 サンプル/秒）", ADA],
     ["RECAP", "Step4: 方策（SFT）", "2,000 step", "256", "20.3 時間（約 36 秒/step）", ADA],
     ["STEAM", "critic の学習", "2,000 step", "64", "8.3 時間（14.9 秒/step）", A5],
@@ -1134,7 +1134,7 @@ rows = [
     ["RL Token", "Stage 2: 1・2 つ目の把持", "750 エポック", "512", "約 8.2 時間", A5],
     ["RL Token", "2 つ目専用の actor", "400 エポック", "512", "約 5.5 時間（約 49 秒/エポック）", A5],
 ]
-table(s, 0.6, 1.1, 12.1, [1.0, 2.3, 2.6, 0.8, 3.2, 2.2], rows, size=12, row_h=0.46, header_h=0.42,
+table(s, 0.6, 1.1, 12.1, [1.0, 2.9, 2.3, 0.8, 3.0, 2.1], rows, size=12, row_h=0.46, header_h=0.42,
       row_fills=[None, WHITE, WHITE, WHITE, LIGHT, LIGHT, LIGHT, WHITE, WHITE, WHITE], align_cols={3: PP_ALIGN.CENTER})
 key_box(s, "合計: RECAP 約 45 時間、STEAM 約 35 時間、RL Token 約 14 時間", y=6.35, h=0.6)
 
