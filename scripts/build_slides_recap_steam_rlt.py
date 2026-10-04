@@ -521,8 +521,8 @@ table(s, 0.6, 1.1, 12.1, [1.3, 3.8, 2.4, 2.9, 1.7], rows, size=13, row_h=0.7, he
 textbox(s, 0.6, 3.8, 12.1, 0.4, [dict(text="実装基盤 RLinf に、smolVLA（約 4.5 億パラメータ）で実験するための変更を加えた", size=15, bold=True, color=BLUE)])
 changes = [
     ("共通", "smolVLA の組み込み", "smolVLA を RLinf のモデルとして登録。LIBERO のロールアウト収集・評価の設定を追加"),
-    ("RECAP・STEAM", "札付き学習とデータ処理", "π₀.₅ 用の札付き SFT（\"Advantage: positive\"）を smolVLA 向けに移植（negative は札なし）。advantage 計算の安定化（中断からの再開、デコードエラーの再試行）"),
-    ("RL Token", "RL の部品", "凍結した smolVLA と RL token の組み込み、LIBERO での把持の判定・報酬・2 つの局面の扱い"),
+    ("RECAP・STEAM", "札付き学習とデータ処理", "π₀.₅ 用の札付き SFT（\"Advantage: positive\"）を smolVLA 向けに移植（negative は札なし）"),
+    ("RL Token", "RL の部品", "凍結した smolVLA と RL token の組み込み、LIBERO での把持の判定・報酬"),
 ]
 for i_, (tag, title_, desc) in enumerate(changes):
     y = 4.3 + i_ * 0.66
@@ -566,7 +566,7 @@ textbox(s, 0.6, 1.1, 5.7, 5.0, [
     (0, "**ただし、VLA への RL には課題がある**"),
     (1, "VLA 全体の RL は、大規模なデータが必要で、オンライン適応に向かない。小さいモデルの RL は、VLA の汎化能力を失う（RL Token）"),
     (1, "方策勾配法は、flow matching の VLA に適用しにくい（RECAP）"),
-    (1, "手作りの報酬や、事前学習した価値モデルは、外部の教師が必要で、未知の状態では信頼できない（STEAM）"),
+    (1, "従来の報酬・価値モデルは、手作りの報酬や人のラベルが必要でスケールしにくく、デモにない状態では、誤って高い advantage を付けることがある（STEAM）"),
 ], size=16, space=5)
 cards = [
     ("RECAP", "方策の学習目標", "Critic は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
