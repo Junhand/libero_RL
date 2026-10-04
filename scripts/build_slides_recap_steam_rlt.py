@@ -62,8 +62,17 @@ def _font(run, size, bold=False, color=BLACK, italic=False):
 TOKEN = re.compile(r"(\*\*.+?\*\*|\^\^.+?\^\^)")
 
 
+WJ = "\u2060"  # WORD JOINER: keeps a minus sign together with the number that follows it
+NEG_NUM = re.compile("([\u2212-])(?=\\d)")
+
+
+def nobreak_minus(text):
+    return NEG_NUM.sub(lambda m: m.group(1) + WJ, text)
+
+
 def _runs(p, text, size, bold=False, color=BLACK, accent=BLUE, font=None):
     """**bold**  ^^accent bold^^"""
+    text = nobreak_minus(text)
     for part in TOKEN.split(text):
         if not part:
             continue
@@ -1115,12 +1124,12 @@ rows = [
      "方策勾配が不要で、flow matching の VLA に使える。デモ・ロールアウト・人の介入を、同じ枠組みで使える", "学習が重く、時間がかかる"],
     ["STEAM", "方策の学習目標（RECAP と同じ条件付き SFT）", "時間オフセット予測器のアンサンブル",
      "人のデモ（自己教師あり）、成功ロールアウト",
-     "報酬や手作りのラベルが不要で、デモから advantage を学べる。アンサンブルの最小値で、過大評価を抑える", "学習が重く、時間がかかる"],
+     "報酬や手作りのラベルが不要。エピソード長で正規化した時間の進みを直接予測するため、遅さが advantage に出る（RECAP は遅いフレームを除けなかったと、論文が報告）。アンサンブルの最小値で、過大評価を抑える", "学習が重く、時間がかかる"],
     ["RL Token", "行動の洗練（凍結 VLA の出力）", "Q 関数（行動の価値を予測）",
      "オンラインで集めるロールアウト（環境と報酬）",
      "軽量（actor は約 5 MB）で、約 5 時間で学習。success_once 0.46 → 0.74", "報酬設計が必要"],
 ]
-table(s, 0.6, 1.1, 12.1, [1.1, 2.0, 2.0, 2.2, 3.1, 1.7], rows, size=13, row_h=1.3, header_h=0.55, bold_rows=(), align_cols=None)
+table(s, 0.6, 1.1, 12.1, [1.0, 1.8, 1.8, 2.0, 3.9, 1.6], rows, size=13, row_h=1.3, header_h=0.55, bold_rows=(), align_cols=None)
 key_box(s, "RECAP と STEAM は、Critic（と学習データ）が違う。RL Token は、行動を直す。目的は補完的")
 
 # ================ old 17
