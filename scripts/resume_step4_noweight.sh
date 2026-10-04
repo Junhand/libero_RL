@@ -32,7 +32,9 @@ run_step4() { # run_step4 <log file> [extra hydra args]
       "$@" > $out 2>&1 )
 }
 START=${START:-$(date +%s)}
-ckpts() { ls -d $LOGS/*-libero10_task0_recap_smolvla/*/checkpoints/global_step_* 2>/dev/null | while read d; do [ $(stat -c %Y "$d") -ge $START ] && echo "${d##*_} $d"; done | sort -n; }
+# 整理・再開の対象はこの学習の保存先だけ（他の実験の checkpoint は絶対に触らない）。引き継ぎ時は RUN_DIR を指定する
+RUN_DIR=${RUN_DIR:-'*-libero10_task0_recap_smolvla'}
+ckpts() { ls -d $LOGS/$RUN_DIR/step4_recap_noweight_resume1000/checkpoints/global_step_* 2>/dev/null | while read d; do [ $(stat -c %Y "$d") -ge $START ] && echo "${d##*_} $d"; done | sort -n; }
 latest_ckpt() { ckpts | tail -1 | cut -d' ' -f2-; }
 prune() { ckpts | head -n -2 | cut -d' ' -f2- | while read d; do rm -rf "$d"; log "pruned $d"; done; }
 log "start: resume from $BASE_CKPT, balance_dataset_weights=false, MB=$MB SAVE=$SAVE max_steps=$MAX_STEPS"
