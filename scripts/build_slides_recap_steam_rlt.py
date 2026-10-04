@@ -392,6 +392,22 @@ def side_notes(slide, x, y, w, items, h=0.9, gap=0.08, size=13):
 
 
 
+def video_panel(slide, x, name, vid, poster, outcome, col, desc, so, pw=2.65, y_label=1.7):
+    box(slide, x, y_label, pw, 0.45, name, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"label {name}")
+    mv = slide.shapes.add_movie(_os.path.join(FIG_DIR, vid), Inches(x), Inches(y_label + 0.5), Inches(pw), Inches(pw),
+                                poster_frame_image=_os.path.join(FIG_DIR, poster), mime_type="video/mp4")
+    mv.name = f"video {name}"
+    box(slide, x, y_label + 3.23, pw, 0.8, [dict(text=outcome, size=17, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
+        fill=col, line=None, size=14, name=f"result {name}")
+    textbox(slide, x - 0.2, y_label + 4.06, pw + 0.4, 0.3, [dict(text=so, size=13, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
+
+
+def instruction_box(slide):
+    box(slide, 0.6, 1.0, 12.1, 0.62, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
+                                      dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY)],
+        fill=LIGHT, line=BLUE, size=14, name="instruction")
+
+
 # ================ old 1
 import os
 ASSET_BG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "title_bg_blue_mesh.jpg")
@@ -1000,33 +1016,21 @@ textbox(s, 0.6, 5.15, 12.1, 1.1, [
 key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:.0f}%）。RECAP・STEAM は途中段階で、差は有意とは言えない")
 
 # ================ new videos
-s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RL Token の動画は H（1 つ目は G の actor、2 つ目は専用 actor）。RECAP と STEAM は準備中。RECAP と STEAM の評価では、指示文の後に改行して Advantage: positive の札を付ける。【発表者向け】RECAP の 0.50 と STEAM の 0.52 は、advantage プロンプトなしで評価した最良値（プロンプトありは RECAP 0.48、STEAM 0.42）。")
-box(s, 0.6, 1.0, 12.1, 0.86, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
-                              dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY),
-                              dict(text="RECAP・STEAM の評価では、指示文の後に改行して、札 \"Advantage: positive\" を付ける", size=13, bold=True, color=ORANGE)],
-    fill=LIGHT, line=BLUE, size=14, name="instruction")
-panels = [
-    ("ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40"),
-    ("RECAP（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "success_once 0.50"),
-    ("STEAM（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "success_once 0.52"),
-    ("RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74"),
-]
-pw = 2.5
-for i, (name, vid, poster, outcome, col, desc, so) in enumerate(panels):
-    x = 0.6 + i * 3.2
-    box(s, x, 1.95, pw, 0.42, name, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"label {name}")
-    if vid:
-        mv = s.shapes.add_movie(_os.path.join(FIG_DIR, vid), Inches(x), Inches(2.42), Inches(pw), Inches(pw),
-                                poster_frame_image=_os.path.join(FIG_DIR, poster), mime_type="video/mp4")
-        mv.name = f"video {name}"
-    else:
-        box(s, x, 2.42, pw, pw, [dict(text="動画", size=18, bold=True, color=GRAY), dict(text="準備中", size=22, bold=True, color=GRAY)],
-            fill=FROZEN_FILL, line=LGRAY, size=18, name=f"placeholder {name}")
-    box(s, x, 4.98, pw, 0.72, [dict(text=outcome, size=16, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
-        fill=col, line=None, size=14, name=f"result {name}")
-    textbox(s, x - 0.2, 5.72, pw + 0.4, 0.3, [dict(text=so, size=12, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
-textbox(s, 0.6, 6.03, 12.1, 0.3, [dict(text="2 環境の左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値", size=11, color=GRAY)])
-key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RL Token は成功した（1 例）", y=6.4, h=0.55)
+s = new_slide("動画で見る手法の効果（初期状態 14）", "初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/30cagwmg（run 名 recap-noprompt-vs-base-init14）。RL Token の動画は H（1 つ目は G の actor、2 つ目は専用 actor）。RECAP の動画は global_step_2000（advantage プロンプトなしで評価、success_once 0.50）。")
+instruction_box(s)
+video_panel(s, 1.0, "ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40")
+video_panel(s, 5.1, "RECAP", "video_init14_recap.mp4", "poster_init14_recap.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.50")
+video_panel(s, 9.2, "RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74")
+textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="2 環境のうち左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。3 つとも同じ初期状態 14", size=11, color=GRAY)])
+key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RECAP と RL Token は成功した（1 例）", y=6.4, h=0.55)
+
+# ================ new videos8
+s = new_slide("動画で見る手法の効果（初期状態 8）", "初期状態 8 での比較（STEAM）。wandb: https://wandb.ai/junhand/libero_RL/runs/kydvjtsn（run 名 demo-init8-base-fail-vs-steamP-success）。STEAM の動画は実験 P（positive のフレームだけで学習、advantage プロンプトなしで評価、success_once 0.52）。画面の reward / termination の文字は、評価の画面表示。")
+instruction_box(s)
+video_panel(s, 3.0, "ベース（smolVLA）", "video_init8_base.mp4", "poster_init8_base.png", "失敗", ORANGE, "缶がカゴの外のテーブルに残る", "success_once 0.40")
+video_panel(s, 7.7, "STEAM", "video_init8_steam.mp4", "poster_init8_steam.png", "成功", GREEN, "缶がカゴの中に入る", "success_once 0.52")
+textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="2 環境のうち左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。初期状態 8（前のページの初期状態 14 とは別）", size=11, color=GRAY)])
+key_box(s, "同じ初期状態 8 で、ベースは失敗し、STEAM は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new cost
 s = new_slide("学習コストの比較（学習ステップ数・時間・GPU）", "実測値（TensorBoard と実行ログ）。GPU は、RECAP が RTX 6000 Ada、それ以外が RTX A5000。")
