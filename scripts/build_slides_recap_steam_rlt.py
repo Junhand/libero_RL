@@ -20,7 +20,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "RECAP_STEAM_RLToken.pptx"
 # ---------------------------------------------------------------- results (edit here)
 R = dict(
     pi05_sft=48.8, pi05_recap=66.5,
-    base=40.0, recap=50.0, steam=52.0, rlt=68.0,
+    base=40.0, recap=50.0, steam=52.0, rlt=74.0,
 )
 
 FONT = "Yu Gothic"
@@ -562,7 +562,7 @@ textbox(s, 0.6, 1.1, 7.7, 5.0, [
     (1, "旧データは、成功後も 520 ステップ続けたため、return が「時間」と「成否」だけで決まっていた"),
     (0, "**人のデモ**: Task 0 の 3 本（836 フレーム）"),
     (0, "**実装**: RLinf（RECAP / STEAM のパイプライン、RL Token の actor-critic）"),
-    (0, "**GPU**: 主に **RTX A5000（24GB）**。RECAP の価値モデルと Step4 は RTX 6000 Ada（48GB）"),
+    (0, "**GPU**: RECAP は **RTX 6000 Ada（48GB）**、それ以外は **RTX A5000（24GB）**"),
 ], size=17)
 stats = [("50", "初期状態（固定）"), ("0.40", "ベースの success_once（20/50）"), ("4,122", "ロールアウト（成功 41.0%）")]
 for i, (n, label) in enumerate(stats):
@@ -745,7 +745,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step1**: 報酬は 1 ステップごとに −1、失敗は終端で −300。return を [−819, 0] に正規化"),
     (0, "**Step2**: 価値モデル（SigLIP2 + Gemma3-270M）が、201 ビンの分布を予測。**成功した時点で打ち切る設定で再収集した 4,122 本**で学習（**4,000 step、20.6 時間**、RTX 6000 Ada 48GB）"),
     (1, "旧データでは、成功後も 520 ステップ続けていたため、価値が「フレーム番号と成否」でほぼ決まっていた"),
-    (0, "**Step3**: A = r_{t:t+10} + V(o_{t+10}) − V(o_t)。上位 30% を positive（人のデモは全て positive）。閾値は全データセットを結合して 1 つに決める（**62.3 万サンプル、4.2 時間**）"),
+    (0, "**Step3**: A = r_{t:t+10} + V(o_{t+10}) − V(o_t)。上位 30% を positive（人のデモは全て positive）。閾値は全データセットを結合して 1 つに決める（**62.3 万サンプル、4.2 時間**、RTX 6000 Ada 48GB）"),
     (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価も positive プロンプトで行う（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
     (0, "**Step5**: success_once は **0.50**（最良。ベース 0.40）。Step4 は途中段階（2,000 step 前後、計画は 30,000 step）で、評価は 0.44〜0.50 の範囲で変動"),
 ], size=17)
@@ -944,12 +944,12 @@ for i, t in enumerate(steps):
         arrow(s, x + 2.2, 1.57, x + 2.5, 1.57, color=GRAY)
 textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step1**: 凍結した smolVLA に、デモとロールアウトの動画フレームを通し、画像トークン（128 × 960）を保存（把持の前後を中心に抽出。**1 データセット約 17 分**、RTX A5000）"),
-    (0, "**Step2**: 小さな encoder-decoder が、保存した特徴から RL token を作る（再構成損失で学習。**6,000 step、約 25 分**）。再構成の val MSE は 0.073（平均を出す基準は 0.269）"),
-    (0, "**Step3**: 1・2 つ目の把持の actor-critic を、オンライン RL で学習（3 環境、更新/データ比 5、探索ノイズ σ = 0.05。**750 エポック、約 8.2 時間**、RTX A5000 24GB）。それ以外は VLA が実行"),
-    (0, "**Step4**: 残る失敗は 2 つ目の把持が最大 → 2 つ目専用の actor を、空振り（何も挟まずに閉じる）への罰 −0.2 つきで学習（1 つ目は Step3 の actor を固定。**400 エポック、5.4 時間**、RTX A5000）"),
-    (0, "**Step5**: success_once は **0.68**（最良。VLA のみ 0.46、1 つ目だけ RL 0.62、2 局面 0.66）。2 つ目を VLA に任せると 0.60。actor の重みは約 5 MB"),
+    (0, "**Step2**: 小さな encoder-decoder が、保存した特徴から RL token を作る（再構成損失で学習。**6,000 step、バッチ 64、約 25 分**、RTX A5000）。再構成の val MSE は 0.073（平均を出す基準は 0.269）"),
+    (0, "**Step3**: 1・2 つ目の把持の actor-critic を、オンライン RL で学習（3 環境、更新/データ比 5、探索ノイズ σ = 0.05。**750 エポック、バッチ 512、約 8.2 時間**、RTX A5000 24GB）。それ以外は VLA が実行"),
+    (0, "**Step4**: 残る失敗は 2 つ目の把持が最大 → 2 つ目専用の actor を、初期値なしで学習（1 つ目は Step3 の actor を固定。**400 エポック、バッチ 512、約 5.5 時間**、RTX A5000）。空振りへの罰 −0.2 を加えると 0.68 で、効果は確認できなかった"),
+    (0, "**Step5**: success_once は **0.74**（最良。3 つの評価シードの平均は 0.71）。VLA のみ 0.46、1 つ目だけ RL 0.62、2 つ目を VLA に任せる 0.68。actor の重みは約 5 MB"),
 ], size=16)
-key_box(s, "凍結した VLA の上の小さな actor-critic だけで、success_once が 0.46 → 0.68 に向上した")
+key_box(s, "凍結した VLA の上の小さな actor-critic だけで、success_once が 0.46 → 0.74 に向上した")
 
 # ================ old 15
 s = new_slide("実験結果", "π₀.₅ は RLinf のチュートリアルの値。smolVLA は私たちの実験（各 50 エピソード）。【発表者向け】RECAP 0.50 と STEAM 0.52 は、advantage プロンプトなしで評価した最良値。プロンプトあり（Advantage: positive）では RECAP 0.48、STEAM 0.42。")
@@ -1000,7 +1000,7 @@ textbox(s, 0.6, 5.15, 12.1, 1.1, [
 key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:.0f}%）。RECAP・STEAM は途中段階で、差は有意とは言えない")
 
 # ================ new videos
-s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP と STEAM は準備中。RECAP と STEAM の評価では、指示文の後に改行して Advantage: positive の札を付ける。【発表者向け】RECAP の 0.50 と STEAM の 0.52 は、advantage プロンプトなしで評価した最良値（プロンプトありは RECAP 0.48、STEAM 0.42）。")
+s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RL Token の動画は H（1 つ目は G の actor、2 つ目は専用 actor）。RECAP と STEAM は準備中。RECAP と STEAM の評価では、指示文の後に改行して Advantage: positive の札を付ける。【発表者向け】RECAP の 0.50 と STEAM の 0.52 は、advantage プロンプトなしで評価した最良値（プロンプトありは RECAP 0.48、STEAM 0.42）。")
 box(s, 0.6, 1.0, 12.1, 0.86, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
                               dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY),
                               dict(text="RECAP・STEAM の評価では、指示文の後に改行して、札 \"Advantage: positive\" を付ける", size=13, bold=True, color=ORANGE)],
@@ -1009,7 +1009,7 @@ panels = [
     ("ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40"),
     ("RECAP（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "success_once 0.50"),
     ("STEAM（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "success_once 0.52"),
-    ("RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.68"),
+    ("RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74"),
 ]
 pw = 2.5
 for i, (name, vid, poster, outcome, col, desc, so) in enumerate(panels):
@@ -1029,24 +1029,24 @@ textbox(s, 0.6, 6.03, 12.1, 0.3, [dict(text="2 環境の左側を 512 × 512 に
 key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RL Token は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new cost
-s = new_slide("学習コストの比較（学習ステップ数・時間・GPU）", "実測値（TensorBoard と実行ログ）。GPU は、ログに名前が残っているものだけを記載。")
+s = new_slide("学習コストの比較（学習ステップ数・時間・GPU）", "実測値（TensorBoard と実行ログ）。GPU は、RECAP が RTX 6000 Ada、それ以外が RTX A5000。")
 A5 = "RTX A5000（24GB）"
 ADA = "RTX 6000 Ada（48GB）"
 rows = [
     ["手法", "段階", "学習ステップ数", "バッチ", "所要時間", "GPU"],
     ["RECAP", "Step2: 価値モデル", "4,000 step", "256", "20.6 時間（18.6 秒/step）", ADA],
-    ["RECAP", "Step3: advantage 計算", "62.3 万サンプル（推論）", "—", "4.2 時間（41 サンプル/秒）", "記録なし"],
+    ["RECAP", "Step3: advantage 計算", "62.3 万サンプル（推論）", "—", "4.2 時間（41 サンプル/秒）", ADA],
     ["RECAP", "Step4: 方策（SFT）", "2,000 step", "256", "20.3 時間（約 36 秒/step）", ADA],
     ["STEAM", "critic の学習", "2,000 step", "64", "8.3 時間（14.9 秒/step）", A5],
     ["STEAM", "advantage 計算", "15.5 万フレーム/データセット", "—", "約 2.4 時間/データセット", A5],
     ["STEAM", "Step4: 方策（SFT）", "1,450 step", "256", "16.5 時間（約 41 秒/step）", A5],
-    ["RL Token", "Stage 1: RL token", "6,000 step", "—", "約 25 分", "記録なし"],
-    ["RL Token", "Stage 2: 1・2 つ目の把持", "750 エポック", "—", "約 8.2 時間", A5],
-    ["RL Token", "2 つ目専用の actor", "400 エポック（更新 約 7.2 万回）", "—", "5.4 時間（約 49 秒/エポック）", A5],
+    ["RL Token", "Stage 1: RL token", "6,000 step", "64", "約 25 分", A5],
+    ["RL Token", "Stage 2: 1・2 つ目の把持", "750 エポック", "512", "約 8.2 時間", A5],
+    ["RL Token", "2 つ目専用の actor", "400 エポック", "512", "約 5.5 時間（約 49 秒/エポック）", A5],
 ]
-table(s, 0.6, 1.1, 12.1, [1.0, 2.35, 2.85, 0.8, 2.7, 2.4], rows, size=12, row_h=0.46, header_h=0.42,
+table(s, 0.6, 1.1, 12.1, [1.0, 2.3, 2.6, 0.8, 3.2, 2.2], rows, size=12, row_h=0.46, header_h=0.42,
       hl_rows=(4, 5, 6, 8, 9), align_cols={3: PP_ALIGN.CENTER})
-textbox(s, 0.6, 5.72, 12.1, 0.55, [dict(text="バッチは global batch。RL Token の 1 エポック = 3 環境のロールアウトと更新。RECAP の advantage は、merged（175.8 万フレーム）のうち 62.3 万サンプル分。「記録なし」は、ログに GPU 名がない", size=11, color=GRAY)])
+textbox(s, 0.6, 5.72, 12.1, 0.55, [dict(text="バッチは global batch（RL Token の Stage 2 は micro 128）。RL Token の 1 エポック = 3 環境のロールアウトと更新。RECAP の advantage は、merged（175.8 万フレーム）のうち 62.3 万サンプル分", size=11, color=GRAY)])
 key_box(s, "合計: RECAP 約 45 時間、STEAM 約 25 時間（advantage 計算を除く）、RL Token 約 14 時間", y=6.35, h=0.6)
 
 # ================ old 16
@@ -1058,7 +1058,7 @@ rows = [
     ["STEAM", "方策の学習目標（RECAP と同じ条件付き SFT）", "評価者: 時間オフセットの critic のアンサンブル。デモ（自己教師あり）",
      "報酬ラベル不要。保守的なアンサンブルで過大評価を抑える", "未知データでの critic の精度が低い。advantage の計算に約 2.5 時間/15.5 万フレーム"],
     ["RL Token", "行動の洗練（凍結 VLA の出力）", "オンラインの環境と報酬。小さな actor-critic",
-     "軽量（約 5 MB）で、約 5 時間で学習。success_once 0.46 → 0.68", "局面の設計（ゲート）が必要。シミュレータ（実機）が必要"],
+     "軽量（約 5 MB）で、約 5 時間で学習。success_once 0.46 → 0.74", "局面の設計（ゲート）が必要。シミュレータ（実機）が必要"],
 ]
 table(s, 0.6, 1.1, 12.1, [1.2, 2.6, 2.7, 2.8, 2.8], rows, size=14, row_h=1.3, header_h=0.55, bold_rows=(), align_cols=None)
 key_box(s, "RECAP と STEAM は評価者だけが違い、RL Token は行動を直す。目的は補完的")
@@ -1083,7 +1083,7 @@ strip = [("ベース", R["base"], LGRAY, BLACK), ("RECAP", R["recap"], SLATE, WH
 for i, (n, v, col, tc) in enumerate(strip):
     box(s, 0.6 + i * 3.05, 4.85, 2.85, 1.2, [dict(text=f"{v/100:.2f}", size=32, bold=True, color=tc), dict(text=n, size=15, color=tc)],
         fill=col, line=None, size=15, name=f"result {n}")
-key_box(s, "最良は RL Token（0.68）。RECAP・STEAM は、学習を進めて、同じ条件で再評価する")
+key_box(s, "最良は RL Token（0.74）。RECAP・STEAM は、学習を進めて、同じ条件で再評価する")
 
 prs.save(OUT)
 print("saved", OUT, "slides:", len(prs.slides))
