@@ -22,7 +22,7 @@ RLinf の STEAM（Self-supervised Temporal Ensemble Advantage Modeling、arXiv:2
 
 - 評価は、2 環境 × 25 周（`total_num_envs=2`、`max_steps_per_rollout_epoch=13000`）。ベースライン（README）は、10 環境 × 5 周で測ったもの。同じ 50 個の初期状態を 1 回ずつ回ると考えているが、2 環境での網羅は確認していない（軌跡数は 50）。
 - **2 つの評価の差の 95% の幅は、約 ±0.19**。上の表の差は、どれも、これより小さい。
-- 参考（RECAP 側、別の環境の記録。私は内容を検証していない）: `results/recap_prompt_ablation_and_expS.md` に、RECAP の step 1000 が 0.40（あり）/0.42（なし）、step 2000 が 0.48 / 0.50、実験 S（成功エピソードのフレームのみ positive）が 0.44（100 試行）とある。
+- 参考（RECAP 側、別の環境の記録。私は内容を検証していない）: `results/recap_smolvla_libero10_task0.md` に、RECAP の step 1000 が 0.40（あり）/0.42（なし）、step 2000 が 0.48 / 0.50、実験 S（成功エピソードのフレームのみ positive）が 0.44（100 試行）とある。
 
 ## 2. パイプラインと設定
 
