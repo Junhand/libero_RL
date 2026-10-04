@@ -399,14 +399,14 @@ for label, text in rows:
 # ================================================================ 3. 書誌情報
 s = new_slide("書誌情報", "3 論文の書誌。本資料の日本語訳は docs/ にある（機械翻訳）。")
 rows = [
-    ["手法", "論文", "著者・所属", "arXiv"],
-    ["RECAP", "π*0.6: a VLA That Learns From Experience", "Physical Intelligence", "2511.14759\n（2025/11）"],
+    ["手法", "論文", "所属", "主な著者", "arXiv"],
+    ["RECAP", "π*0.6: a VLA That Learns From Experience", "Physical Intelligence", "Ali Amin, Sergey Levine ほか", "2511.14759\n（2025/11）"],
     ["STEAM", "STEAM: Self-Supervised Temporal Ensemble Advantage Modeling for Real-World Robot Learning",
-     "Zhihao Liu, Qiuyi Gu ほか（中国科学院自動化研究所、清華大学 ほか）", "2606.29834"],
+     "中国科学院自動化研究所、清華大学 ほか", "Zhihao Liu, Qiuyi Gu ほか", "2606.29834"],
     ["RL Token", "RL Token: Bootstrapping Online RL with Vision-Language-Action Models",
-     "Charles Xu, Jost Tobias Springenberg, Sergey Levine, Liyiming Ke ほか（Physical Intelligence）", "2604.23073\n（2026/04）"],
+     "Physical Intelligence", "Charles Xu, Jost Tobias Springenberg, Sergey Levine, Liyiming Ke ほか", "2604.23073\n（2026/04）"],
 ]
-table(s, 0.6, 1.2, 12.1, [1.6, 5.0, 3.9, 1.6], rows, size=14, row_h=1.0, header_h=0.5)
+table(s, 0.6, 1.2, 12.1, [1.3, 3.8, 2.4, 2.9, 1.7], rows, size=14, row_h=1.0, header_h=0.5)
 textbox(s, 0.6, 4.95, 12.1, 1.1, [
     (0, "実装基盤: **RLinf**（強化学習の学習基盤。RECAP / STEAM のパイプラインと、RL Token 用の actor-critic を使用）"),
     (0, "ベースモデル: **smolVLA**（lerobot/smolvla_libero、約 4.5 億パラメータ）。参考値として、RLinf のチュートリアルにある π₀.₅ の RECAP 結果も使う"),
