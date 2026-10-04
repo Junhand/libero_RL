@@ -8,9 +8,10 @@ cd /workspace/libero_RL
 ROOT=/workspace/libero_RL
 EV=tmp/step4_resume_events.log
 D=$ROOT/data/smolvla_recap
-ADV=meta/advantages_fail300_N10_q30.parquet
+ADV_TAG=${ADV_TAG:-fail300_N10_q30}   # advantage のタグ（q10 など relabel したものに切り替える）
+ADV=meta/advantages_$ADV_TAG.parquet
 LOGS=RLinf/logs
-MAX_STEPS=${MAX_STEPS:-2000}; MB=16; SAVE=100
+MAX_STEPS=${MAX_STEPS:-2000}; MB=${MB:-16}; SAVE=${SAVE:-100}; N_EVAL=${N_EVAL:-1}   # N_EVAL: 評価を繰り返す回数（1 回 = 50 試行）
 # 環境変数で変えられる設定（既定: 重みなし = balance_dataset_weights=false、global_step_1000 から再開）
 # 注意: smolVLA 用ローダ(smolvla_cfg.py)の balance は RLinf 本体(ReCapMixtureDataset)と意味が逆。
 #   false = 各フレームが同じ確率で選ばれる（フレーム数の比。RLinf 公式の既定 balance=true と同じ挙動。sft 約 0.13%）
@@ -63,12 +64,15 @@ R=$(latest_ckpt); S=${R##*_}
 W=$ROOT/$R/actor/model_state_dict/full_weights.pt
 [ -f "$W" ] || { log "ABORT: $W がない"; exit 1; }
 W_LOG=tmp/step9_eval_${EXP_NAME}.log
-log "Step9 評価 開始 ckpt=$W"
-( source RLinf/.venv-smolvla/bin/activate; cd RLinf
-  bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
-    rollout.model.model_path=$ROOT/models/smolvla_libero runner.ckpt_path=$W \
-    rollout.model.smolvla.advantage_prompt=true \
-    rollout.model.smolvla.vlm_model_name=$ROOT/models/SmolVLM2-500M-Video-Instruct \
-    "+env.eval.task_id_filter=[0]" env.eval.total_num_envs=10 env.eval.max_steps_per_rollout_epoch=2600 ) > $W_LOG 2>&1
-log "Step9 評価 終了: $(tr '\r' '\n' < $W_LOG | grep -oE "'eval/success_once': array\([0-9.]+" | tail -1) (ベースライン 0.40、1000 ステップ時 0.46、重みなし2000 ステップ時 0.44)"
-log "ALL DONE"
+log "Step9 評価 開始 ckpt=$W (${N_EVAL} 回 x 50 試行)"
+: > $W_LOG
+for k in $(seq 1 $N_EVAL); do
+  ( source RLinf/.venv-smolvla/bin/activate; cd RLinf
+    bash evaluations/run_eval.sh libero libero_10_smolvla_eval \
+      rollout.model.model_path=$ROOT/models/smolvla_libero runner.ckpt_path=$W \
+      rollout.model.smolvla.advantage_prompt=true \
+      rollout.model.smolvla.vlm_model_name=$ROOT/models/SmolVLM2-500M-Video-Instruct \
+      "+env.eval.task_id_filter=[0]" env.eval.total_num_envs=10 env.eval.max_steps_per_rollout_epoch=2600 ) >> $W_LOG 2>&1
+  log "Step9 評価 $k/$N_EVAL 終了: $(tr '\r' '\n' < $W_LOG | grep -oE "'eval/success_once': array\([0-9.]+" | tail -1)"
+done
+log "ALL DONE （ベースライン 0.40、1000 ステップ 0.46、2000 ステップ 0.44）"
