@@ -733,7 +733,7 @@ eq_block(s, 4.81, 4, "**実行時**: 札を「良い」に固定して行動を�
 key_box(s, "方策は「札あり」と「札なし」の両方を表現できるので、改善確率を明示的に推定しなくてよい", y=6.3)
 
 # ================ old 8
-s = new_slide("RECAP: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。名称は私たちのパイプラインの番号。")
+s = new_slide("RECAP: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。名称は私たちのパイプラインの番号。【発表者向け】0.50 は、advantage プロンプトなしで評価した最良値。プロンプトあり（Advantage: positive）では 0.48。Step4 は途中段階（2,000 step）。")
 steps = ["Step1\nreturn の計算", "Step2\n価値モデルの学習", "Step3\nadvantage の計算", "Step4\n条件付き SFT", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
@@ -746,8 +746,8 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step2**: 価値モデル（SigLIP2 + Gemma3-270M）が、201 ビンの分布を予測。**成功した時点で打ち切る設定で再収集した 4,122 本**で学習（**4,000 step、20.6 時間**、RTX 6000 Ada 48GB）"),
     (1, "旧データでは、成功後も 520 ステップ続けていたため、価値が「フレーム番号と成否」でほぼ決まっていた"),
     (0, "**Step3**: A = r_{t:t+10} + V(o_{t+10}) − V(o_t)。上位 30% を positive（人のデモは全て positive）。閾値は全データセットを結合して 1 つに決める（**62.3 万サンプル、4.2 時間**）"),
-    (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価では、札あり・札なしの両方を試した（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
-    (0, "**Step5**: success_once は **0.50**（最良、プロンプトなし。ベース 0.40）。プロンプトありは 0.48。Step4 は途中段階（2,000 step 前後、計画は 30,000 step）で、評価は 0.44〜0.50 の範囲で変動"),
+    (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価も positive プロンプトで行う（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
+    (0, "**Step5**: success_once は **0.50**（最良。ベース 0.40）。Step4 は途中段階（2,000 step 前後、計画は 30,000 step）で、評価は 0.44〜0.50 の範囲で変動"),
 ], size=17)
 key_box(s, "価値モデルの信号は、データの作り方（成功で打ち切るか）に強く依存した")
 
@@ -830,7 +830,7 @@ textbox(s, 0.6, 5.0, 12.1, 1.1, [
 key_box(s, "論文では、STEAM が RECAP（1 反復）を全タスクで上回る。タオル折りでは +36.7 pt")
 
 # ================ old 11
-s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
+s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。【発表者向け】0.52 は、最初の 1,000 step は札付き SFT、続く 450 step は positive のフレームだけで学習したモデルを、advantage プロンプトなしで評価した値。札付き SFT（プロンプトあり）の評価は 0.42、両側タグ（negative にも札を付ける）は 0.36。")
 steps = ["Step1\nフレームペアの作成", "Step2\ncritic の学習", "Step3\nadvantage の計算", "Step4\n方策の学習（SFT）", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
@@ -843,8 +843,8 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step2**: critic（SigLIP so400m + Gemma3-270M）が、時間差の 32 ビンの分布を予測（**2,000 step、バッチ 64、8.3 時間**、RTX A5000 24GB）"),
     (1, "学習データ上の accuracy は 0.277 → 0.353。未知のロールアウト（step 600）では 0.106 と低い"),
     (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**1 データセット約 2.4 時間**、RTX A5000）"),
-    (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（プロンプトなし）（**合計 1,450 step、16.5 時間**、RTX A5000）"),
-    (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）。札付き SFT（プロンプトあり）は 0.42、両側タグは 0.36"),
+    (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（**合計 1,450 step、16.5 時間**、RTX A5000）"),
+    (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）"),
 ], size=16)
 key_box(s, "critic は学習データ上では改善したが、未知のロールアウトでの精度は低い（今後の課題）")
 
@@ -952,7 +952,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
 key_box(s, "凍結した VLA の上の小さな actor-critic だけで、success_once が 0.46 → 0.68 に向上した")
 
 # ================ old 15
-s = new_slide("実験結果", "π₀.₅ は RLinf のチュートリアルの値。smolVLA は私たちの実験（各 50 エピソード）。")
+s = new_slide("実験結果", "π₀.₅ は RLinf のチュートリアルの値。smolVLA は私たちの実験（各 50 エピソード）。【発表者向け】RECAP 0.50 と STEAM 0.52 は、advantage プロンプトなしで評価した最良値。プロンプトあり（Advantage: positive）では RECAP 0.48、STEAM 0.42。")
 pts = lambda v: f"{v:.1f}%"
 rows = [
     ["モデル", "手法", "成功率", "ベース比"],
@@ -994,21 +994,21 @@ for i, col in enumerate((LGRAY, SLATE, LGRAY, SLATE, SLATE, GREEN)):
     pt.format.fill.solid()
     pt.format.fill.fore_color.rgb = col
 textbox(s, 0.6, 5.15, 12.1, 1.1, [
-    (0, f"smolVLA: 各 50 エピソード（標準誤差 ±0.07）。RECAP・STEAM は、Step4 の途中の checkpoint の最良値。どちらも advantage プロンプトなしの評価（STEAM は、正例のみで学習した step 1,450）。プロンプトありは、RECAP 0.48、STEAM 0.42"),
+    (0, f"smolVLA: 各 50 エピソード（標準誤差 ±0.07）。RECAP・STEAM は、Step4 の途中の checkpoint の最良値。評価条件の詳細は、口頭で補足"),
     (0, "π₀.₅ は RLinf チュートリアルの記載値で、モデル・設定・評価数が異なり、smolVLA との直接比較はできない"),
 ], size=12, color=GRAY, space=3)
 key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:.0f}%）。RECAP・STEAM は途中段階で、差は有意とは言えない")
 
 # ================ new videos
-s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP と STEAM は準備中。RECAP と STEAM の評価では、指示文の後に改行して Advantage: positive の札を付ける。")
+s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP と STEAM は準備中。RECAP と STEAM の評価では、指示文の後に改行して Advantage: positive の札を付ける。【発表者向け】RECAP の 0.50 と STEAM の 0.52 は、advantage プロンプトなしで評価した最良値（プロンプトありは RECAP 0.48、STEAM 0.42）。")
 box(s, 0.6, 1.0, 12.1, 0.86, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
                               dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY),
                               dict(text="RECAP・STEAM の評価では、指示文の後に改行して、札 \"Advantage: positive\" を付ける", size=13, bold=True, color=ORANGE)],
     fill=LIGHT, line=BLUE, size=14, name="instruction")
 panels = [
     ("ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40"),
-    ("RECAP（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "札あり 0.48 ／ 札なし 0.50"),
-    ("STEAM（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "札あり 0.42 ／ 札なし 0.52"),
+    ("RECAP（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "success_once 0.50"),
+    ("STEAM（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "success_once 0.52"),
     ("RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.68"),
 ]
 pw = 2.5
@@ -1025,7 +1025,7 @@ for i, (name, vid, poster, outcome, col, desc, so) in enumerate(panels):
     box(s, x, 4.98, pw, 0.72, [dict(text=outcome, size=16, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
         fill=col, line=None, size=14, name=f"result {name}")
     textbox(s, x - 0.2, 5.72, pw + 0.4, 0.3, [dict(text=so, size=12, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
-textbox(s, 0.6, 6.03, 12.1, 0.3, [dict(text="2 環境の左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。札なしは最良値", size=11, color=GRAY)])
+textbox(s, 0.6, 6.03, 12.1, 0.3, [dict(text="2 環境の左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値", size=11, color=GRAY)])
 key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RL Token は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new cost
