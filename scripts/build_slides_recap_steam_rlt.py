@@ -1000,31 +1000,32 @@ textbox(s, 0.6, 5.15, 12.1, 1.1, [
 key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:.0f}%）。RECAP・STEAM は途中段階で、差は有意とは言えない")
 
 # ================ new videos
-s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP と STEAM は準備中。")
-box(s, 0.6, 1.0, 12.1, 0.62, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
-                              dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY)],
+s = new_slide("動画で見る手法の効果（初期状態 14）", "同じ初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP と STEAM は準備中。RECAP と STEAM の評価では、指示文の後に改行して Advantage: positive の札を付ける。")
+box(s, 0.6, 1.0, 12.1, 0.86, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
+                              dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY),
+                              dict(text="RECAP・STEAM の評価では、指示文の後に改行して、札 \"Advantage: positive\" を付ける", size=13, bold=True, color=ORANGE)],
     fill=LIGHT, line=BLUE, size=14, name="instruction")
 panels = [
     ("ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40"),
-    ("RECAP", None, None, "準備中", GRAY, "動画は準備中です", "success_once 0.50"),
-    ("STEAM", None, None, "準備中", GRAY, "動画は準備中です", "success_once 0.52"),
+    ("RECAP（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "札あり 0.48 ／ 札なし 0.50"),
+    ("STEAM（札: positive）", None, None, "準備中", GRAY, "指示文 + 札 \"Advantage: positive\"", "札あり 0.42 ／ 札なし 0.52"),
     ("RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.68"),
 ]
-pw = 2.65
+pw = 2.5
 for i, (name, vid, poster, outcome, col, desc, so) in enumerate(panels):
-    x = 0.6 + i * 3.15
-    box(s, x, 1.7, pw, 0.45, name, fill=BLUE, line=None, size=15, color=WHITE, bold=True, name=f"label {name}")
+    x = 0.6 + i * 3.2
+    box(s, x, 1.95, pw, 0.42, name, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"label {name}")
     if vid:
-        mv = s.shapes.add_movie(_os.path.join(FIG_DIR, vid), Inches(x), Inches(2.2), Inches(pw), Inches(pw),
+        mv = s.shapes.add_movie(_os.path.join(FIG_DIR, vid), Inches(x), Inches(2.42), Inches(pw), Inches(pw),
                                 poster_frame_image=_os.path.join(FIG_DIR, poster), mime_type="video/mp4")
         mv.name = f"video {name}"
     else:
-        box(s, x, 2.2, pw, pw, [dict(text="動画", size=18, bold=True, color=GRAY), dict(text="準備中", size=22, bold=True, color=GRAY)],
+        box(s, x, 2.42, pw, pw, [dict(text="動画", size=18, bold=True, color=GRAY), dict(text="準備中", size=22, bold=True, color=GRAY)],
             fill=FROZEN_FILL, line=LGRAY, size=18, name=f"placeholder {name}")
-    box(s, x, 4.93, pw, 0.8, [dict(text=outcome, size=17, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
+    box(s, x, 4.98, pw, 0.72, [dict(text=outcome, size=16, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
         fill=col, line=None, size=14, name=f"result {name}")
-    textbox(s, x, 5.76, pw, 0.3, [dict(text=so, size=13, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
-textbox(s, 0.6, 6.05, 12.1, 0.3, [dict(text="2 環境のうち左側を切り出し、512 × 512 に拡大。クリックで再生（約 52 秒、520 ステップ）。success_once は 50 エピソードの値", size=11, color=GRAY)])
+    textbox(s, x - 0.2, 5.72, pw + 0.4, 0.3, [dict(text=so, size=12, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
+textbox(s, 0.6, 6.03, 12.1, 0.3, [dict(text="2 環境の左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。札なしは最良値", size=11, color=GRAY)])
 key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RL Token は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new cost
