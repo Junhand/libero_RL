@@ -470,11 +470,11 @@ for i, line_ in enumerate(("RECAP, STEAM, and RL Token:", "Reinforcement Learnin
     _plain_run(p, line_, 26, WHITE, "Arial")
 
 # presenter / affiliation block (3 lines, left aligned)
-au = s.shapes.add_textbox(Inches(4.27), Inches(1.15), Inches(8.6), Inches(1.1))
+au = s.shapes.add_textbox(Inches(4.27), Inches(1.3), Inches(8.6), Inches(0.95))
 au.name = "presenter block"
 tf = au.text_frame
 tf.word_wrap = True
-for i, line_ in enumerate(("smolVLA × LIBERO-10 Task 0 での実験", "RLinf / libero_RL プロジェクト", "2026/10/04")):
+for i, line_ in enumerate(("2026/10/04", "Jun Kawagoshi")):
     p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
     p.alignment = PP_ALIGN.LEFT
     _plain_run(p, line_, 20, WHITE, "Yu Gothic")
