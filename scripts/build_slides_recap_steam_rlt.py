@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """Build docs/RECAP_STEAM_RLToken.pptx (python-pptx). Style follows docs/publication (DL Papers look).
-Usage: python scripts/build_slides_recap_steam_rlt.py docs/RECAP_STEAM_RLToken.pptx   (needs python-pptx; edit the R dict for results)
+Usage: python scripts/build_slides_recap_steam_rlt.py docs/RECAP_STEAM_RLToken.pptx   (needs python-pptx; edit the R dict for results; figures in scripts/assets)
 """
 import re
 import sys
@@ -363,6 +363,35 @@ def io_diagram(slide, in_t, model_t, out_t, res_t, teacher_t, loss_t, y=1.4):
     textbox(slide, 5.4, y + 1.22, 2.2, 0.45, [dict(text="損失が小さくなるよう更新", size=12, color=ORANGE, bold=True)])
 
 
+import os as _os
+FIG_DIR = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "assets")
+if not _os.path.isdir(FIG_DIR):
+    FIG_DIR = "/workspace/libero_RL/scripts/assets"
+
+
+def fig_pic(slide, name, x, y, max_w, max_h, caption=None):
+    from PIL import Image as _Image
+    path = _os.path.join(FIG_DIR, name)
+    w, h = _Image.open(path).size
+    sc = min(max_w / w, max_h / h)
+    pw, ph = w * sc, h * sc
+    px = x + (max_w - pw) / 2
+    pic = slide.shapes.add_picture(path, Inches(px), Inches(y), Inches(pw), Inches(ph))
+    pic.name = name
+    if caption:
+        textbox(slide, x, y + ph + 0.03, max_w, 0.3, [dict(text=caption, size=11, color=GRAY, align=PP_ALIGN.CENTER)])
+    return pic, ph
+
+
+def side_notes(slide, x, y, w, items, h=0.9, gap=0.08, size=13):
+    for i, (title, text) in enumerate(items):
+        yy = y + i * (h + gap)
+        box(slide, x, yy, 0.5, h, str(i + 1), fill=BLUE, line=None, size=16, color=WHITE, bold=True, name=f"no {i+1}")
+        box(slide, x + 0.55, yy, w - 0.55, h, [dict(text=title, size=size, bold=True), dict(text=text, size=size - 1)],
+            fill=PALE, line=LGRAY, size=size, align=PP_ALIGN.LEFT, name=f"note {i+1}")
+
+
+
 # ================ old 1
 import os
 ASSET_BG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "title_bg_blue_mesh.jpg")
@@ -451,7 +480,7 @@ rows = [
     ("実験", "smolVLA（lerobot/smolvla_libero）で、Task 0（2 つの物体をカゴへ）の success_once を、固定の初期状態 50 個で測る。実装は RLinf"),
     ("結果", f"ベース {R['base']/100:.2f} に対し、^^RL Token が {R['rlt']/100:.2f}^^、RECAP が {R['recap']/100:.2f}、STEAM が {R['steam']/100:.2f}（いずれも最良値）。"
             "RECAP と STEAM は学習の途中段階で、ベースとの差は、50 エピソードの評価では有意とは言えない"),
-    ("結論", "RECAP と STEAM は、評価者（advantage の作り方）だけが違う同じ型。RL Token は、オンライン RL で行動を洗練する別の型。成功で打ち切る収集設計が、価値の信号に重要だった"),
+    ("結論", "RECAP と STEAM は、どちらも advantage から「良い」の札を作って方策を学習し、評価者（advantage の作り方）だけが違う。RL Token は、オンライン RL で行動を洗練する。成功で打ち切る収集設計が、価値の信号に重要だった"),
 ]
 y = 1.15
 for label, text in rows:
@@ -477,26 +506,26 @@ textbox(s, 0.6, 4.95, 12.1, 1.1, [
 key_box(s, "論文の内容（引用）と、私たちの実験（smolVLA）を、スライド上で区別して示す")
 
 # ================ old 4
-s = new_slide("背景: なぜ VLA に強化学習か", "RECAP と STEAM は同じ型（advantage 条件付き学習）で、評価者が違う。RL Token は別の型、という整理が主題。")
+s = new_slide("背景: なぜ VLA に強化学習か", "RECAP と STEAM は評価者（advantage の作り方）だけが違う。RL Token は、オンラインで行動を洗練する、という整理が主題。")
 textbox(s, 0.6, 1.1, 5.6, 4.9, [
     (0, "**VLA は、模倣学習（SFT）で多様な技能を学べる**"),
     (1, "ただし、実タスクが要求する精度・速度・失敗からの回復には届かない"),
     (0, "**強化学習（RL）で、自分の経験から改善したい**"),
     (1, "10 億パラメータ級のモデル全体を、オンラインで更新するのは、計算コストもサンプル効率も悪い"),
     (1, "flow matching の行動生成は、対数尤度が扱いにくく、方策勾配法（PPO など）を適用しにくい"),
-    (0, "**3 手法の位置づけ**: RECAP と STEAM は同じ型（評価者だけが違う）。RL Token は別の型"),
+    (0, "**3 手法の位置づけ**: RECAP と STEAM は評価者だけが違う。RL Token は、行動を洗練する"),
 ], size=17)
 cards = [
-    ("RECAP", "同じ型: 方策の学習目標", "評価者は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
-    ("STEAM", "同じ型: 方策の学習目標", "評価者は、時間オフセットを当てる critic のアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
-    ("RL Token", "別の型: 行動の洗練", "VLA は凍結。読み出しトークンの上の小さな actor-critic が、オンライン RL で VLA の行動を改善する"),
+    ("RECAP", "方策の学習目標", "評価者は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
+    ("STEAM", "方策の学習目標", "評価者は、時間オフセットを当てる critic のアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
+    ("RL Token", "行動の洗練", "VLA は凍結。読み出しトークンの上の小さな actor-critic が、オンライン RL で VLA の行動を改善する"),
 ]
 for i, (t, where, desc) in enumerate(cards):
     y = 1.1 + i * 1.7
     box(s, 6.5, y, 2.0, 1.5, [f"^^{t}^^"], fill=PALE, line=BLUE, size=20, name=f"card {t}")
     box(s, 8.6, y, 4.1, 1.5, [f"**{where}**", desc], fill=WHITE, line=LGRAY, size=14,
         align=PP_ALIGN.LEFT, name=f"desc {t}")
-key_box(s, "RECAP と STEAM は同じ型（評価者だけが違う）。RL Token は、オンラインで行動を洗練する別の型")
+key_box(s, "RECAP と STEAM は評価者だけが違う。RL Token は、オンラインで行動を洗練する")
 
 # ================ new basics
 s = new_slide("強化学習の基本用語", "強化学習を知らない人向けの前提。『やってみて、結果から、良い行動を増やす』が一言。")
@@ -521,40 +550,6 @@ for i, (t, d) in enumerate(terms):
     box(s, 6.9, y, 1.7, 0.85, t, fill=BLUE, line=None, size=15, color=WHITE, bold=True, name=f"term {t}")
     textbox(s, 8.7, y - 0.02, 4.1, 0.9, [dict(text=d, size=13)], anchor=MSO_ANCHOR.MIDDLE, name=f"def {t}")
 key_box(s, "RL は「やってみて、結果の良し悪しから、良い行動を増やす」学習。RECAP・STEAM は advantage を使う")
-
-# ================ new value_image
-s = new_slide("価値と advantage のイメージ", "数値は説明用の模式図で、実験の値ではない。")
-cd = CategoryChartData()
-cd.categories = [str(i) for i in range(11)]
-cd.add_series("価値 V（成功に近いほど 0）", (-0.9, -0.8, -0.7, -0.6, -0.65, -0.75, -0.6, -0.4, -0.2, -0.1, 0.0))
-gf = s.shapes.add_chart(XL_CHART_TYPE.LINE_MARKERS, Inches(0.6), Inches(1.1), Inches(7.2), Inches(4.2), cd)
-ch = gf.chart
-style_chart(ch, 12)
-ch.has_legend = False
-ch.has_title = True
-ch.chart_title.text_frame.text = "1 回の成功エピソードでの、価値 V の変化（イメージ）"
-ch.chart_title.text_frame.paragraphs[0].runs[0].font.size = Pt(13)
-ch.chart_title.text_frame.paragraphs[0].runs[0].font.bold = True
-va = ch.value_axis
-va.minimum_scale = -1.0
-va.maximum_scale = 0.0
-va.major_unit = 0.25
-va.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
-va.tick_labels.font.size = Pt(12)
-ch.category_axis.tick_labels.font.size = Pt(12)
-from pptx.enum.chart import XL_TICK_LABEL_POSITION
-ch.category_axis.tick_label_position = XL_TICK_LABEL_POSITION.LOW
-ser = ch.plots[0].series[0]
-ser.format.line.color.rgb = BLUE
-ser.format.line.width = Pt(3)
-ser.smooth = False
-ser.marker.format.fill.solid()
-ser.marker.format.fill.fore_color.rgb = BLUE
-textbox(s, 0.6, 5.3, 7.2, 0.5, [dict(text="横軸: ステップ（時間）。途中の 4→5 で物を落とし、価値が下がっている", size=12, color=GRAY)])
-box(s, 8.2, 1.15, 4.5, 1.35, ["**価値 V**", "「成功まであとどれくらいか」を数値で予想したもの。0 に近いほど成功に近い"], fill=PALE, line=LGRAY, size=14, align=PP_ALIGN.LEFT, name="value")
-box(s, 8.2, 2.65, 4.5, 1.35, ["**advantage A**", "行動の前後で V がどう変わったか。上がれば A > 0（良い行動）、下がれば A < 0（悪い行動）"], fill=PALE, line=LGRAY, size=14, align=PP_ALIGN.LEFT, name="advantage")
-box(s, 8.2, 4.15, 4.5, 1.35, ["**使い道**", "A > 0 の行動を「良い」とみなして、方策に学習させる（RECAP・STEAM）"], fill=PALE, line=LGRAY, size=14, align=PP_ALIGN.LEFT, name="use")
-key_box(s, "advantage = 行動の前後で、成功への近さがどれだけ変わったか")
 
 # ================ old 5
 s = new_slide("実験設定", "評価は 50 エピソード。標準誤差が大きいことを最初に断っておく。")
@@ -597,6 +592,17 @@ arrow(s, 12.3, 4.8, 12.3, 1.7)
 arrow(s, 12.3, 1.7, 11.3, 1.7)
 textbox(s, 11.4, 5.35, 1.6, 0.6, [dict(text="新しい方策で\n再収集", size=12, color=GRAY, align=PP_ALIGN.CENTER)])
 key_box(s, "「良い行動」を選んで学習するための札を、価値関数から作る。それが RECAP の核心")
+
+# ================ new fig_recap
+s = new_slide("RECAP: アーキテクチャ（論文の図）", "論文 π*0.6 の図 3 より。下が価値関数、上が VLA。")
+fig_pic(s, "fig_recap.png", 0.6, 1.05, 6.6, 4.85, "図: π*0.6 論文（Physical Intelligence）図 3 より")
+side_notes(s, 7.4, 1.1, 5.3, [
+    ("価値関数（図の下）", "画像と指示文から、価値 V を出す（SigLIP + Gemma 270M に、value head を付けたもの）"),
+    ("advantage", "A = r + V(o_t+N) − V(o_t)。行動の前後で、成功に近づいたか"),
+    ("2 値化", "A > ε なら「良い」。この札（metadata）を、VLA の入力に加える"),
+    ("VLA（図の上）", "画像・指示文・札から、行動を出す。離散化した行動と、action expert（860M）が出す連続の行動"),
+], h=1.1, size=13)
+key_box(s, "価値関数が作った「良い/悪い」の札を、VLA の入力に加えて学習する")
 
 # ================ new recap_return
 s = new_slide("RECAP: return の計算方法", "Step1。実データ 368 エピソード（r1_m0）で、この式と一致することを確認済み。")
@@ -766,6 +772,18 @@ textbox(s, 7.3, 3.3, 5.4, 0.7, [dict(text="逆再生: f5 → f2\n正解の時間
 box(s, 7.3, 4.2, 5.4, 1.2, ["**正規化**", "エピソードの長さで時間差を割り、長さの違うデモを、同じ尺度でそろえる"], fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name="norm")
 key_box(s, "報酬を作らず、デモの時間構造から、「前進」と「停滞・後退」を区別する advantage を学ぶ")
 
+# ================ new fig_steam
+s = new_slide("STEAM: アーキテクチャ（論文の図）", "論文 STEAM の図 1 より。左から、ラベル付け、予測器の学習、方策の改善。")
+fig_pic(s, "fig_steam.png", 0.6, 1.1, 12.1, 2.6, "図: STEAM 論文図 1 より")
+for i, (t, d) in enumerate([
+    ("① フレームペアのラベル付け", "専門家デモの 2 つのフレーム（前進 forward / 後退 backward）の時間差を、エピソード長で正規化して、正解にする"),
+    ("② 時間オフセット予測器の学習", "2 つのフレームと指示文から、時間差の分布を出す。M 個の予測器を学習して、アンサンブルにする"),
+    ("③ 方策の改善", "専門家・ロールアウト・人の修正のデータに、アンサンブルで A_STEAM を付け、CFGRL（札付き学習）で VLA を学習する"),
+]):
+    box(s, 0.6 + i * 4.1, 4.15, 3.9, 1.9, [dict(text=t, size=16, bold=True, color=BLUE), dict(text=d, size=14)],
+        fill=PALE, line=LGRAY, size=14, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, name=f"panel {i+1}")
+key_box(s, "報酬を使わず、デモの時間構造から advantage を作り、VLA を学習する")
+
 # ================ new steam_critic
 s = new_slide("STEAM ①: critic の学習（入力・出力・更新）", "デモだけで学習する。報酬は使わない。")
 io_diagram(s, ("入力", ["フレーム f_i と f_j", "（2 台のカメラ）+ 指示文"]), ("critic", ["SigLIP + Gemma3-270M", "更新する"]),
@@ -868,6 +886,18 @@ arrow(s, 10.1, 2.5, 10.1, 3.1)
 arrow(s, 10.1, 4.4, 10.1, 5.0)
 textbox(s, 10.25, 2.55, 2.4, 0.5, [dict(text="下書き ã", size=12, color=GRAY)])
 key_box(s, "RL は小さな actor-critic だけが担当し、VLA の知識を壊さずに、数時間で行動を洗練できる")
+
+# ================ new fig_rlt
+s = new_slide("RL Token: アーキテクチャ（論文の図）", "論文 RL Token の図 2 より。VLA の内部の埋め込みを、1 本の RL token に圧縮する。")
+fig_pic(s, "fig_rl_token.png", 0.6, 1.05, 5.4, 4.85, "図: RL Token 論文（Physical Intelligence）図 2 より")
+side_notes(s, 6.3, 1.1, 6.4, [
+    ("入力（図の下）", "3 台のカメラ画像と指示文を、VLA（SigLIP + Gemma）に入れる"),
+    ("画像の埋め込み", "VLA の内部で作られる、画像の埋め込み（N × 2048）"),
+    ("encoder → RL token", "埋め込みと、学習可能なトークン e_rl から、1 本の RL token（1 × 2048）に圧縮する"),
+    ("decoder", "RL token から、元の埋め込みを再構成する。これを損失にして、RL token に情報を詰める"),
+    ("行動チャンク（図の右）", "VLA の action expert が、ノイズから行動チャンクを出す。RL では、これを「参照行動」として使う"),
+], h=0.92, size=13)
+key_box(s, "VLA は凍結したまま、RL token が、RL にとっての小さな状態表現になる")
 
 # ================ new rlt_step
 s = new_slide("RL Token ①: 1 ステップの流れ（入力 → 出力）", "実行時と学習データの収集で、同じ流れ。灰色は凍結、オレンジは更新する部品。")
@@ -1050,13 +1080,13 @@ rows = [
      "軽量（約 5 MB）で、約 5 時間で学習。success_once 0.46 → 0.68", "局面の設計（ゲート）が必要。シミュレータ（実機）が必要"],
 ]
 table(s, 0.6, 1.1, 12.1, [1.2, 2.6, 2.7, 2.8, 2.8], rows, size=14, row_h=1.3, header_h=0.55, bold_rows=(), align_cols=None)
-key_box(s, "RECAP と STEAM は評価者だけが違う同じ型。RL Token は行動を直す別の型で、目的は補完的")
+key_box(s, "RECAP と STEAM は評価者だけが違い、RL Token は行動を直す。目的は補完的")
 
 # ================ old 17
 s = new_slide("まとめと今後", "次の作業: Step4 の本学習、critic の精度、評価の統計的な信頼性。")
 box(s, 0.6, 1.1, 5.9, 0.6, "まとめ", fill=BLUE, line=None, size=20, color=WHITE, bold=True, name="summary head")
 textbox(s, 0.6, 1.85, 5.9, 3.0, [
-    (0, "RECAP と STEAM は評価者が違う同じ型（advantage 条件付き学習）。RL Token は、オンライン RL で行動を洗練する"),
+    (0, "RECAP と STEAM は評価者が違う（advantage 条件付き学習）。RL Token は、オンライン RL で行動を洗練する"),
     (0, f"smolVLA では **RL Token が最良**（{R['base']/100:.2f} → {R['rlt']/100:.2f}）"),
     (0, f"RECAP・STEAM は、Step4 の途中段階の最良値で {min(R['steam'], R['recap'])/100:.2f}〜{max(R['steam'], R['recap'])/100:.2f}。ベースとの差は、有意とは言えない"),
     (0, "成功で打ち切る収集設計が、価値・critic の信号に重要"),
