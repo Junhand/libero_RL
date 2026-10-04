@@ -392,19 +392,22 @@ def side_notes(slide, x, y, w, items, h=0.9, gap=0.08, size=13):
 
 
 
-def video_panel(slide, x, name, vid, poster, outcome, col, desc, so, pw=2.65, y_label=1.7):
-    box(slide, x, y_label, pw, 0.45, name, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"label {name}")
-    mv = slide.shapes.add_movie(_os.path.join(FIG_DIR, vid), Inches(x), Inches(y_label + 0.5), Inches(pw), Inches(pw),
+def video_panel(slide, x, name, vid, poster, outcome, col, desc, so, pw=2.5, y_label=1.95):
+    box(slide, x, y_label, pw, 0.42, name, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"label {name}")
+    vy = y_label + 0.47
+    mv = slide.shapes.add_movie(_os.path.join(FIG_DIR, vid), Inches(x), Inches(vy), Inches(pw), Inches(pw),
                                 poster_frame_image=_os.path.join(FIG_DIR, poster), mime_type="video/mp4")
     mv.name = f"video {name}"
-    box(slide, x, y_label + 3.23, pw, 0.8, [dict(text=outcome, size=17, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
+    ry = vy + pw + 0.07
+    box(slide, x, ry, pw, 0.75, [dict(text=outcome, size=16, bold=True, color=WHITE), dict(text=desc, size=11, color=WHITE)],
         fill=col, line=None, size=14, name=f"result {name}")
-    textbox(slide, x - 0.2, y_label + 4.06, pw + 0.4, 0.3, [dict(text=so, size=13, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
+    textbox(slide, x - 0.2, ry + 0.78, pw + 0.4, 0.3, [dict(text=so, size=13, bold=True, color=BLUE, align=PP_ALIGN.CENTER)])
 
 
 def instruction_box(slide):
-    box(slide, 0.6, 1.0, 12.1, 0.62, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
-                                      dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY)],
+    box(slide, 0.6, 1.0, 12.1, 0.86, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
+                                      dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY),
+                                      dict(text="RECAP・STEAM は、指示文の後に改行して、札 \"Advantage: positive\" を付ける（動画の評価条件は口頭で補足）", size=13, bold=True, color=ORANGE)],
         fill=LIGHT, line=BLUE, size=14, name="instruction")
 
 
@@ -1018,17 +1021,17 @@ key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:
 # ================ new videos
 s = new_slide("動画で見る手法の効果（初期状態 14）", "初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/30cagwmg（run 名 recap-noprompt-vs-base-init14）。RL Token の動画は H（1 つ目は G の actor、2 つ目は専用 actor）。RECAP の動画は global_step_2000（advantage プロンプトなしで評価、success_once 0.50）。")
 instruction_box(s)
-video_panel(s, 1.0, "ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40")
-video_panel(s, 5.1, "RECAP", "video_init14_recap.mp4", "poster_init14_recap.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.50")
-video_panel(s, 9.2, "RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74")
+video_panel(s, 1.3, "ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40")
+video_panel(s, 5.4, "RECAP（札: positive）", "video_init14_recap.mp4", "poster_init14_recap.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.50")
+video_panel(s, 9.5, "RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74")
 textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="2 環境のうち左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。3 つとも同じ初期状態 14", size=11, color=GRAY)])
 key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RECAP と RL Token は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new videos8
 s = new_slide("動画で見る手法の効果（初期状態 8）", "初期状態 8 での比較（STEAM）。wandb: https://wandb.ai/junhand/libero_RL/runs/kydvjtsn（run 名 demo-init8-base-fail-vs-steamP-success）。STEAM の動画は実験 P（positive のフレームだけで学習、advantage プロンプトなしで評価、success_once 0.52）。画面の reward / termination の文字は、評価の画面表示。")
 instruction_box(s)
-video_panel(s, 3.0, "ベース（smolVLA）", "video_init8_base.mp4", "poster_init8_base.png", "失敗", ORANGE, "缶がカゴの外のテーブルに残る", "success_once 0.40")
-video_panel(s, 7.7, "STEAM", "video_init8_steam.mp4", "poster_init8_steam.png", "成功", GREEN, "缶がカゴの中に入る", "success_once 0.52")
+video_panel(s, 3.2, "ベース（smolVLA）", "video_init8_base.mp4", "poster_init8_base.png", "失敗", ORANGE, "缶がカゴの外のテーブルに残る", "success_once 0.40")
+video_panel(s, 7.6, "STEAM（札: positive）", "video_init8_steam.mp4", "poster_init8_steam.png", "成功", GREEN, "缶がカゴの中に入る", "success_once 0.52")
 textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="2 環境のうち左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。初期状態 8（前のページの初期状態 14 とは別）", size=11, color=GRAY)])
 key_box(s, "同じ初期状態 8 で、ベースは失敗し、STEAM は成功した（1 例）", y=6.4, h=0.55)
 
