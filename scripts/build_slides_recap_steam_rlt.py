@@ -597,6 +597,65 @@ arrow(s, 12.3, 1.7, 11.3, 1.7)
 textbox(s, 11.4, 5.35, 1.6, 0.6, [dict(text="新しい方策で\n再収集", size=12, color=GRAY, align=PP_ALIGN.CENTER)])
 key_box(s, "「良い行動」を選んで学習するための札を、価値関数から作る。それが RECAP の核心")
 
+# ================ new recap_return
+s = new_slide("RECAP: return の計算方法", "Step1。実データ 368 エピソード（r1_m0）で、この式と一致することを確認済み。")
+textbox(s, 0.6, 1.0, 5.9, 0.4, [dict(text="① 1 ステップごとの報酬", size=15, bold=True, color=BLUE)])
+vals_s = ["−1", "−1", "−1", "…", "−1", "0"]
+vals_f = ["−1", "−1", "−1", "…", "−1", "−300"]
+box(s, 0.6, 1.5, 0.9, 0.5, "成功", fill=GREEN, line=None, size=13, color=WHITE, bold=True, name="succ label")
+box(s, 0.6, 2.1, 0.9, 0.5, "失敗", fill=ORANGE, line=None, size=13, color=WHITE, bold=True, name="fail label")
+for i, (a, b) in enumerate(zip(vals_s, vals_f)):
+    last = i == len(vals_s) - 1
+    box(s, 1.6 + i * 0.8, 1.5, 0.72, 0.5, a, fill=GREEN if last else LIGHT, line=BLUE, size=13, color=WHITE if last else BLACK, bold=last, name=f"s{i}")
+    box(s, 1.6 + i * 0.8, 2.1, 0.72, 0.5, b, fill=ORANGE if last else LIGHT, line=BLUE, size=13, color=WHITE if last else BLACK, bold=last, name=f"f{i}")
+textbox(s, 1.6, 2.62, 4.9, 0.3, [dict(text="フレーム 0 → 最後のフレーム（最後だけ、結果で値が違う）", size=11, color=GRAY)])
+textbox(s, 0.6, 3.0, 5.9, 0.4, [dict(text="② return = そのフレーム以降の報酬の合計", size=15, bold=True, color=BLUE)])
+textbox(s, 0.6, 3.4, 5.9, 0.9, [
+    (0, "return_t = r_t + r_{t+1} + … + r_最後（割引なし）"),
+    (0, "早く成功するほど、return は 0 に近い"),
+], size=13, space=3)
+textbox(s, 0.6, 4.25, 5.9, 0.4, [dict(text="③ 正規化（価値モデルの正解にするため）", size=15, bold=True, color=BLUE)])
+textbox(s, 0.6, 4.65, 5.9, 0.6, [(0, "最大 520 フレームの失敗の最小値 −819 で割り、[−1, 0] にそろえる（0 が成功、−1 が最悪）")], size=13)
+node(s, 0.6, 5.3, 2.85, 0.85, "成功（260 フレーム）", ["100 フレーム目: −159 → −0.19"], kind="out", size=12, name="ex succ")
+node(s, 3.65, 5.3, 2.85, 0.85, "失敗（520 フレーム）", ["100 フレーム目: −719 → −0.88"], kind="train", size=12, name="ex fail")
+from pptx.chart.data import XyChartData
+cd = XyChartData()
+a = cd.add_series("成功（260 フレームで終了）")
+a.add_data_point(0, -259)
+a.add_data_point(259, 0)
+b = cd.add_series("失敗（520 フレーム、最後に −300）")
+b.add_data_point(0, -819)
+b.add_data_point(519, -300)
+gf = s.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER_LINES_NO_MARKERS, Inches(6.8), Inches(1.0), Inches(5.9), Inches(4.5), cd)
+ch = gf.chart
+style_chart(ch, 12)
+ch.has_title = True
+ch.chart_title.text_frame.text = "フレームごとの return（例）"
+ch.chart_title.text_frame.paragraphs[0].runs[0].font.size = Pt(13)
+ch.chart_title.text_frame.paragraphs[0].runs[0].font.bold = True
+ch.has_legend = True
+ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+ch.legend.include_in_layout = False
+va = ch.value_axis
+va.minimum_scale = -900
+va.maximum_scale = 0
+va.major_unit = 300
+va.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
+va.tick_labels.font.size = Pt(12)
+ca = ch.category_axis
+ca.minimum_scale = 0
+ca.maximum_scale = 540
+ca.major_unit = 100
+ca.tick_labels.font.size = Pt(12)
+from pptx.enum.chart import XL_TICK_LABEL_POSITION
+ca.tick_label_position = XL_TICK_LABEL_POSITION.LOW
+for ser, col in zip(ch.plots[0].series, (GREEN, ORANGE)):
+    ser.format.line.color.rgb = col
+    ser.format.line.width = Pt(3)
+    ser.smooth = False
+textbox(s, 6.8, 5.5, 5.9, 0.5, [dict(text="横軸: フレーム番号。縦軸: return（正規化前）。傾きは 1 ステップあたり +1", size=12, color=GRAY)])
+key_box(s, "return は、「そのフレームから先の報酬の合計」。成功に近いほど 0、失敗は −300 の罰の分だけ低くなる")
+
 # ================ new recap_value
 s = new_slide("RECAP ①: 価値関数の学習（入力・出力・更新）", "Step2。価値モデルだけを更新する。VLA はまだ触らない。")
 io_diagram(s, ("入力", ["カメラ画像", "指示文"]), ("価値モデル", ["SigLIP2 + Gemma3-270M", "更新する"]),
