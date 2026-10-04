@@ -2,6 +2,7 @@
 
 RLinf の STEAM（Self-supervised Temporal Ensemble Advantage Modeling、arXiv:2606.29834）を、smolVLA（`lerobot/smolvla_libero`）で、LIBERO-10 の Task 0 に適用した実験の記録。
 期間は 2026-10-01 〜 10-04。GPU は RTX A5000（24GB、コンテナのメモリ上限 25GB）。論文の日本語訳は `docs/steam_paper_ja.md`。
+**全実験の詳細（条件、数値、時系列、障害）は `results/steam_smolvla_libero10_task0_details.md`**。
 
 **結論（先に）**: critic（時間オフセット予測器）は、評価データで成功と失敗をよく分離できた（エピソード単位 AUC 1.00、フレーム単位 0.91）。
 しかし、その advantage で方策を追加学習しても、成功率は、ベースライン 0.40 から、**統計的に区別できる変化を示していない**（0.36〜0.52、50 試行の標準誤差は約 0.07）。
