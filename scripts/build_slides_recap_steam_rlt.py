@@ -647,7 +647,7 @@ textbox(s, 0.6, 3.4, 5.9, 0.9, [
     (0, "早く成功するほど、return は 0 に近い"),
 ], size=13, space=3)
 textbox(s, 0.6, 4.25, 5.9, 0.4, [dict(text="③ 正規化（価値モデルの正解にするため）", size=15, bold=True, color=BLUE)])
-textbox(s, 0.6, 4.65, 5.9, 0.6, [(0, "最大 520 フレームの失敗の最小値 −819 で割り、[−1, 0] にそろえる（0 が成功、−1 が最悪）")], size=13)
+textbox(s, 0.6, 4.65, 5.9, 0.6, [(0, "最大 520 フレームの失敗の最小値 −819 で割り、[−1, 0] にそろえる（0 が成功、−1 が最悪）。価値モデルは、この値を当てる")], size=13)
 node(s, 0.6, 5.3, 2.85, 0.85, "成功（260 フレーム）", ["100 フレーム目: −159 → −0.19"], kind="out", size=12, name="ex succ")
 node(s, 3.65, 5.3, 2.85, 0.85, "失敗（520 フレーム）", ["100 フレーム目: −719 → −0.88"], kind="train", size=12, name="ex fail")
 from pptx.chart.data import XyChartData
@@ -700,6 +700,50 @@ spec_table(s, 0.6, 4.15, 12.1, [
     ["損失 / 更新", "交差エントロピーを小さくするよう、価値モデルのパラメータを更新（VLA は更新しない）"],
 ], size=13, row_h=0.42, label_w=1.6)
 key_box(s, "価値モデルは、画像を見て「成功まであとどれくらいか」を当てる問題として学習する", y=6.35, h=0.6)
+
+# ================ new recap_vcalc
+s = new_slide("RECAP: 価値 V の算出方法", "数値は説明用の例で、実験の値ではない。ビンの値は、正規化した return の範囲 [−1, 0] を 201 個に等分したもの（実装: v_min = −1、v_max = 0、num_bins = 201）。V は、各ビンの確率の期待値。")
+import math
+bins = [-1.0 + k * 0.05 for k in range(21)]
+probs = [math.exp(-((b + 0.30) ** 2) / (2 * 0.12 ** 2)) for b in bins]
+tot = sum(probs)
+probs = [p / tot for p in probs]
+cd = CategoryChartData()
+cd.categories = [f"{b:.2f}" if i % 4 == 0 else "" for i, b in enumerate(bins)]
+cd.add_series("確率", probs)
+gf = s.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.6), Inches(1.1), Inches(6.9), Inches(3.6), cd)
+ch = gf.chart
+style_chart(ch, 12)
+ch.has_legend = False
+ch.has_title = True
+ch.chart_title.text_frame.text = "価値モデルの出力: 各ビンの確率（例。実際は 201 個）"
+ch.chart_title.text_frame.paragraphs[0].runs[0].font.size = Pt(13)
+ch.chart_title.text_frame.paragraphs[0].runs[0].font.bold = True
+ch.plots[0].gap_width = 30
+ch.plots[0].series[0].format.fill.solid()
+ch.plots[0].series[0].format.fill.fore_color.rgb = BLUE
+va = ch.value_axis
+va.minimum_scale = 0
+va.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
+va.tick_labels.font.size = Pt(11)
+va.has_major_gridlines = True
+ch.category_axis.tick_labels.font.size = Pt(11)
+textbox(s, 0.6, 4.7, 6.9, 0.35, [dict(text="横軸: ビンの値（−1 = 最悪、0 = 成功）。縦軸: そのビンの確率", size=12, color=GRAY)])
+box(s, 7.8, 1.1, 4.9, 1.3, [dict(text="① 画像と指示文を、価値モデルに入れる", size=14, bold=True, color=BLUE),
+                              dict(text="出力: 201 個のビンの確率（足して 1）", size=13)],
+    fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name="step1")
+box(s, 7.8, 2.55, 4.9, 1.4, [dict(text="② 期待値をとる", size=14, bold=True, color=BLUE),
+                              dict(text="V = Σ（ビンの値 × そのビンの確率）", size=14, bold=True),
+                              dict(text="確率の重みつきの平均", size=12, color=GRAY)],
+    fill=LIGHT, line=BLUE, size=13, align=PP_ALIGN.LEFT, name="step2")
+box(s, 7.8, 4.1, 4.9, 0.95, [dict(text="③ V は、「正規化した return の予想」", size=14, bold=True, color=BLUE),
+                              dict(text="0 に近いほど成功に近い。例: V = −0.30", size=13)],
+    fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name="step3")
+arrow(s, 10.25, 2.4, 10.25, 2.55)
+arrow(s, 10.25, 3.95, 10.25, 4.1)
+box(s, 0.6, 5.2, 12.1, 0.9, [dict(text="使い道: 2 つのフレームの V の差から advantage を作る（A = r + V(o_t+10) − V(o_t)）。V が上がれば、その行動は「良い」", size=14)],
+    fill=WHITE, line=BLUE, size=14, align=PP_ALIGN.LEFT, name="usage")
+key_box(s, "価値 V は、ビンの確率の期待値。「成功まであとどれくらいか」を、1 つの数値で表す", y=6.3, h=0.62)
 
 # ================ new recap_adv
 s = new_slide("RECAP ②: advantage の計算と「良い/悪い」の札", "Step3。モデルの更新はなく、データに札を付ける処理。")
