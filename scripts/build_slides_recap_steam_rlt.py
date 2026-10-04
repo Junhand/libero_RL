@@ -861,7 +861,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step1**: 人のデモ 3 本（重み 4）と、成功ロールアウトから、k = 32 ステップ先とのフレームペアを作る。逆再生のペアは、負の時間差。時間差は軌跡長で正規化し、32 ビンに分ける"),
     (0, "**Step2**: critic（SigLIP so400m + Gemma3-270M）が、時間差の 32 ビンの分布を予測（**2,000 step、バッチ 64、8.3 時間**、RTX A5000 24GB）"),
     (1, "学習データ上の accuracy は 0.277 → 0.353。未知のロールアウト（step 600）では 0.106 と低い"),
-    (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**1 データセット約 2.4 時間**、RTX A5000）"),
+    (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**62.3 万フレーム、合計 約 9.8 時間**、RTX A5000。2 台で分担）"),
     (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（**合計 1,450 step、16.5 時間**、RTX A5000）"),
     (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）"),
 ], size=16)
@@ -1045,7 +1045,7 @@ rows = [
     ["RECAP", "Step3: advantage 計算", "62.3 万サンプル（推論）", "—", "4.2 時間（41 サンプル/秒）", ADA],
     ["RECAP", "Step4: 方策（SFT）", "2,000 step", "256", "20.3 時間（約 36 秒/step）", ADA],
     ["STEAM", "critic の学習", "2,000 step", "64", "8.3 時間（14.9 秒/step）", A5],
-    ["STEAM", "advantage 計算", "15.5 万フレーム/データセット", "—", "約 2.4 時間/データセット", A5],
+    ["STEAM", "advantage 計算", "62.3 万フレーム（推論）", "—", "約 9.8 時間（2 台で分担）", A5],
     ["STEAM", "Step4: 方策（SFT）", "1,450 step", "256", "16.5 時間（約 41 秒/step）", A5],
     ["RL Token", "Stage 1: RL token", "6,000 step", "64", "約 25 分", A5],
     ["RL Token", "Stage 2: 1・2 つ目の把持", "750 エポック", "512", "約 8.2 時間", A5],
@@ -1053,8 +1053,8 @@ rows = [
 ]
 table(s, 0.6, 1.1, 12.1, [1.0, 2.3, 2.6, 0.8, 3.2, 2.2], rows, size=12, row_h=0.46, header_h=0.42,
       row_fills=[None, WHITE, WHITE, WHITE, LIGHT, LIGHT, LIGHT, WHITE, WHITE, WHITE], align_cols={3: PP_ALIGN.CENTER})
-textbox(s, 0.6, 5.72, 12.1, 0.55, [dict(text="バッチは global batch（RL Token の Stage 2 は micro 128）。RL Token の 1 エポック = 3 環境のロールアウトと更新。RECAP の advantage は、merged（175.8 万フレーム）のうち 62.3 万サンプル分", size=11, color=GRAY)])
-key_box(s, "合計: RECAP 約 45 時間、STEAM 約 25 時間（advantage 計算を除く）、RL Token 約 14 時間", y=6.35, h=0.6)
+textbox(s, 0.6, 5.72, 12.1, 0.55, [dict(text="バッチは global batch（RL Token の Stage 2 は micro 128）。RL Token の 1 エポック = 3 環境のロールアウトと更新。advantage の計算は、RECAP・STEAM とも、merged（175.8 万フレーム）のうち 62.3 万フレーム分（STEAM は GPU 時間の合計）", size=11, color=GRAY)])
+key_box(s, "合計: RECAP 約 45 時間、STEAM 約 35 時間、RL Token 約 14 時間", y=6.35, h=0.6)
 
 # ================ old 16
 s = new_slide("考察: 3 手法の比較", "表は定性的な比較。smolVLA での経験に基づく。")
