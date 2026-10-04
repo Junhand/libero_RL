@@ -865,7 +865,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（**合計 1,450 step、16.5 時間**、RTX A5000）"),
     (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）"),
 ], size=16)
-key_box(s, "critic は学習データ上では改善したが、未知のロールアウトでの精度は低い（今後の課題）")
+key_box(s, "critic は学習データ上では改善したが、未知のロールアウトでの精度は低い（課題）")
 
 # ================ new rlt_prop
 s = new_slide("RL Token: 提案（論文）", "VLA を凍結して、RL token という小さな状態表現の上で RL をする。")
@@ -1071,7 +1071,7 @@ table(s, 0.6, 1.1, 12.1, [1.2, 2.6, 2.7, 2.8, 2.8], rows, size=14, row_h=1.3, he
 key_box(s, "RECAP と STEAM は評価者だけが違い、RL Token は行動を直す。目的は補完的")
 
 # ================ old 17
-s = new_slide("まとめと今後", "次の作業: Step4 の本学習、critic の精度、評価の統計的な信頼性。")
+s = new_slide("まとめと課題", "残された課題: Step4 の学習量、critic の精度、評価の統計的な信頼性、RL Token の適用範囲。")
 box(s, 0.6, 1.1, 5.9, 0.6, "まとめ", fill=BLUE, line=None, size=20, color=WHITE, bold=True, name="summary head")
 textbox(s, 0.6, 1.85, 5.9, 3.0, [
     (0, "RECAP と STEAM は評価者が違う（advantage 条件付き学習）。RL Token は、オンライン RL で行動を洗練する"),
@@ -1079,18 +1079,18 @@ textbox(s, 0.6, 1.85, 5.9, 3.0, [
     (0, f"RECAP・STEAM は、Step4 の途中段階の最良値で {min(R['steam'], R['recap'])/100:.2f}〜{max(R['steam'], R['recap'])/100:.2f}。ベースとの差は、有意とは言えない"),
     (0, "成功で打ち切る収集設計が、価値・critic の信号に重要"),
 ], size=16)
-box(s, 6.8, 1.1, 5.9, 0.6, "今後", fill=GREEN, line=None, size=20, color=WHITE, bold=True, name="future head")
+box(s, 6.8, 1.1, 5.9, 0.6, "課題", fill=GREEN, line=None, size=20, color=WHITE, bold=True, name="issues head")
 textbox(s, 6.8, 1.85, 5.9, 3.0, [
-    (0, "RECAP・STEAM の Step4 を、本学習（30,000 step）まで進める"),
-    (0, "STEAM の critic のアンサンブルを増やし、未知データでの精度を上げる"),
-    (0, "評価を 100 エピソード以上にして、標準誤差を縮める"),
-    (0, "RL Token を、LIBERO-10 の他のタスクに広げる"),
+    (0, "RECAP・STEAM の Step4 は途中段階（計画の 30,000 step に対し、2,000 step 前後）"),
+    (0, "STEAM の critic は、未知のロールアウトでの精度が低く、アンサンブルも 1 個"),
+    (0, "評価が 50 エピソードで、標準誤差が大きい（±0.07）"),
+    (0, "RL Token は、Task 0 だけで検証。他のタスクは未検証"),
 ], size=16)
 strip = [("ベース", R["base"], LGRAY, BLACK), ("RECAP", R["recap"], SLATE, WHITE), ("STEAM", R["steam"], SLATE, WHITE), ("RL Token", R["rlt"], GREEN, WHITE)]
 for i, (n, v, col, tc) in enumerate(strip):
     box(s, 0.6 + i * 3.05, 4.85, 2.85, 1.2, [dict(text=f"{v/100:.2f}", size=32, bold=True, color=tc), dict(text=n, size=15, color=tc)],
         fill=col, line=None, size=15, name=f"result {n}")
-key_box(s, "最良は RL Token（0.74）。RECAP・STEAM は、学習を進めて、同じ条件で再評価する")
+key_box(s, "最良は RL Token（0.74）。RECAP・STEAM は途中段階で、学習量と評価の信頼性が課題")
 
 prs.save(OUT)
 print("saved", OUT, "slides:", len(prs.slides))
