@@ -829,45 +829,22 @@ textbox(s, 0.6, 5.0, 12.1, 1.1, [
 key_box(s, "論文では、STEAM が RECAP（1 反復）を全タスクで上回る。タオル折りでは +36.7 pt")
 
 # ================ old 11
-s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "グラフは学習中の指標（学習データ上）。検証データの値は左の箇条書き。")
-textbox(s, 0.6, 1.1, 6.0, 5.0, [
-    (0, "**critic**: SigLIP so400m + Gemma3-270M。k = 32 ステップ先との時間オフセットを、32 ビンの分布で予測"),
-    (0, "**学習**: 人のデモ 3 本（重み 4）と、成功ロールアウト。2,000 step"),
-    (0, "**advantage**: ロールアウトは上位 30%、デモは上位 80% を positive（アンサンブルのメンバー数は 1）"),
-    (0, "**学習データ上の精度**（step 500 → 2,000）"),
-    (1, "accuracy 0.277 → 0.353"),
-    (1, "隣接ビンを含む accuracy 0.375 → 0.569"),
-    (0, "**未知のロールアウト**（eval 64 本、step 600）: accuracy 0.106、隣接 0.189。失敗エピソードを含むため、学習時より低い"),
-    (0, "**Step4 の結果**: 0.52（正例のみで学習、step 1,450、プロンプトなし）。プロンプトありは 0.42、両側タグは 0.36"),
-    (0, "**学習コスト**（RTX A5000 24GB）: critic **2,000 step（バッチ 64）、8.3 時間**。Step4 は **1,450 step、16.5 時間**"),
-], size=15, space=4)
-cd = CategoryChartData()
-cd.categories = ["500-600", "600-700", "700-800", "800-1000", "1000-1200", "1200-1400", "1400-1600", "1600-1800", "1800-2000"]
-cd.add_series("accuracy", (0.277, 0.295, 0.295, 0.297, 0.316, 0.333, 0.348, 0.345, 0.353))
-cd.add_series("accuracy（隣接ビンを含む）", (0.375, 0.405, 0.416, 0.432, 0.471, 0.504, 0.531, 0.539, 0.569))
-gf = s.shapes.add_chart(XL_CHART_TYPE.LINE_MARKERS, Inches(6.8), Inches(1.1), Inches(6.0), Inches(4.9), cd)
-ch = gf.chart
-style_chart(ch, 12)
-ch.has_title = True
-ch.chart_title.text_frame.text = "critic の学習中の精度（学習データ上）"
-ch.chart_title.text_frame.paragraphs[0].runs[0].font.size = Pt(13)
-ch.chart_title.text_frame.paragraphs[0].runs[0].font.bold = True
-ch.has_legend = True
-ch.legend.position = XL_LEGEND_POSITION.BOTTOM
-ch.legend.include_in_layout = False
-va = ch.value_axis
-va.minimum_scale = 0.2
-va.maximum_scale = 0.65
-va.major_unit = 0.1
-va.major_gridlines.format.line.color.rgb = RGBColor(0xD9, 0xD9, 0xD9)
-va.tick_labels.font.size = Pt(12)
-ch.category_axis.tick_labels.font.size = Pt(11)
-for ser, col in zip(ch.plots[0].series, (SLATE, BLUE)):
-    ser.format.line.color.rgb = col
-    ser.format.line.width = Pt(2.5)
-    ser.marker.format.fill.solid()
-    ser.marker.format.fill.fore_color.rgb = col
-    ser.smooth = False
+s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step9）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
+steps = ["Step1\nフレームペアの作成", "Step2\ncritic の学習", "Step3\nadvantage の計算", "Step4\n方策の学習（SFT）", "Step9\nシミュレータで評価"]
+for i, t in enumerate(steps):
+    x = 0.6 + i * 2.5
+    box(s, x, 1.1, 2.2, 0.95, t.split("\n"), fill=BLUE if i < 4 else GREEN, line=None, size=14, color=WHITE, bold=True,
+        name=f"step {i}")
+    if i < 4:
+        arrow(s, x + 2.2, 1.57, x + 2.5, 1.57, color=GRAY)
+textbox(s, 0.6, 2.3, 12.1, 3.9, [
+    (0, "**Step1**: 人のデモ 3 本（重み 4）と、成功ロールアウトから、k = 32 ステップ先とのフレームペアを作る。逆再生のペアは、負の時間差。時間差は軌跡長で正規化し、32 ビンに分ける"),
+    (0, "**Step2**: critic（SigLIP so400m + Gemma3-270M）が、時間差の 32 ビンの分布を予測（**2,000 step、バッチ 64、8.3 時間**、RTX A5000 24GB）"),
+    (1, "学習データ上の accuracy は 0.277 → 0.353。未知のロールアウト（step 600）では 0.106 と低い"),
+    (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**1 データセット約 2.4 時間**、RTX A5000）"),
+    (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（プロンプトなし）（**合計 1,450 step、16.5 時間**、RTX A5000）"),
+    (0, "**Step9**: success_once は **0.52**（最良。ベース 0.40）。札付き SFT（プロンプトあり）は 0.42、両側タグは 0.36"),
+], size=16)
 key_box(s, "critic は学習データ上では改善したが、未知のロールアウトでの精度は低い（今後の課題）")
 
 # ================ new rlt_prop
