@@ -416,7 +416,7 @@ def video_panel(slide, x, name, vid, poster, outcome, col, desc, so, pw=2.5, y_l
 def instruction_box(slide):
     box(slide, 0.6, 1.0, 12.1, 0.86, [dict(text="指示文（全手法で共通）:  \"put both the alphabet soup and the tomato sauce in the basket\"", size=15, bold=True, color=BLUE),
                                       dict(text="（アルファベットスープの缶とトマトソースの、両方をカゴに入れる。Task 0）", size=12, color=GRAY),
-                                      dict(text="RECAP・STEAM は、指示文の後に改行して、札 \"Advantage: positive\" を付ける（動画の評価条件は口頭で補足）", size=13, bold=True, color=ORANGE)],
+                                      dict(text="RECAP・STEAM は、指示文の後に改行して、条件 \"Advantage: positive\" を付ける（動画の評価条件は口頭で補足）", size=13, bold=True, color=ORANGE)],
         fill=LIGHT, line=BLUE, size=14, name="instruction")
 
 
@@ -508,7 +508,7 @@ rows = [
     ("実験", "smolVLA（lerobot/smolvla_libero）で、Task 0（2 つの物体をカゴへ）の success_once を、固定の初期状態 50 個で測る。実装は RLinf"),
     ("結果", f"ベース {R['base']/100:.2f} に対し、^^RL Token が {R['rlt']/100:.2f}^^、RECAP が {R['recap']/100:.2f}、STEAM が {R['steam']/100:.2f}（いずれも最良値）。"
             "RECAP と STEAM は学習の途中段階で、ベースとの差は、50 エピソードの評価では有意とは言えない"),
-    ("結論", "RECAP と STEAM は、どちらも advantage から「良い」の札を作って方策を学習し、Critic（advantage の作り方）だけが違う。RL Token は、オンライン RL で行動を洗練する"),
+    ("結論", "RECAP と STEAM は、どちらも advantage から「良い」の条件（positive）を作って方策を学習し、Critic（advantage の作り方）だけが違う。RL Token は、オンライン RL で行動を洗練する"),
 ]
 y = 1.15
 for label, text in rows:
@@ -530,7 +530,7 @@ table(s, 0.6, 1.1, 12.1, [1.3, 3.8, 2.4, 2.9, 1.7], rows, size=13, row_h=0.7, he
 textbox(s, 0.6, 3.8, 12.1, 0.4, [dict(text="実装基盤 RLinf に、smolVLA（約 4.5 億パラメータ）で実験するための変更を加えた", size=15, bold=True, color=BLUE)])
 changes = [
     ("共通", "smolVLA の組み込み", "smolVLA を RLinf のモデルとして登録。LIBERO のロールアウト収集・評価の設定を追加"),
-    ("RECAP・STEAM", "札付き学習とデータ処理", "π₀.₅ 用の札付き SFT（\"Advantage: positive\"）を smolVLA 向けに移植（negative は札なし）"),
+    ("RECAP・STEAM", "条件付き学習とデータ処理", "π₀.₅ 用の条件付き SFT（\"Advantage: positive\"）を smolVLA 向けに移植（negative は条件なし）"),
     ("RL Token", "RL の部品", "凍結した smolVLA と RL token の組み込み、LIBERO での把持の判定・報酬"),
 ]
 for i_, (tag, title_, desc) in enumerate(changes):
@@ -578,8 +578,8 @@ textbox(s, 0.6, 1.1, 5.7, 5.0, [
     (1, "従来の報酬・価値モデルは、手作りの報酬や人のラベルが必要でスケールしにくく、デモにない状態では、誤って高い advantage を付けることがある（STEAM）"),
 ], size=16, space=5)
 cards = [
-    ("RECAP", "方策の学習目標", "Critic は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
-    ("STEAM", "方策の学習目標", "Critic は、時間オフセットを当てるモデルのアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
+    ("RECAP", "方策の学習目標", "Critic は価値関数。成功への近さ V から advantage を作り、「良い」の条件（positive）を付けて方策を学習する"),
+    ("STEAM", "方策の学習目標", "Critic は、時間オフセットを当てるモデルのアンサンブル。advantage を作り、同じ条件付きの学習で方策を学習する"),
     ("RL Token", "行動の洗練", "VLA は凍結。読み出しトークンの上の小さな actor-critic が、オンライン RL で VLA の行動を改善する"),
 ]
 for i, (t, where, desc) in enumerate(cards):
@@ -607,19 +607,19 @@ for i, (n, label) in enumerate(stats):
 key_box(s, "評価は 50 エピソード。2 つの評価の差の誤差は約 ±0.1 なので、0.1 程度の差は有意とは言えない")
 
 # ================ new recap_prop
-s = new_slide("RECAP: 提案（論文: π*0.6）", "RECAP は、価値関数の出力を『良い/悪い』の札として方策に条件付けるのが核心。")
+s = new_slide("RECAP: 提案（論文: π*0.6）", "RECAP は、価値関数の出力を『良い/悪い』の条件として方策に条件付けるのが核心。")
 textbox(s, 0.6, 1.1, 6.6, 5.0, [
-    (0, "**考え方**: うまくいった行動に「良い」の札を付けて学習し、実行時は「良い」の札を付けて動かす"),
+    (0, "**考え方**: うまくいった行動に「良い」の条件（positive）を付けて学習し、実行時は「良い」の条件を付けて動かす"),
     (0, "次の 3 ステップを繰り返す"),
     (1, "① **集める**: ロボットを動かし、結果（成功/失敗）を記録する"),
     (1, "② **価値関数を学習する**: 「あとどれくらいで成功か」を予想するモデル"),
-    (1, "③ **方策を学習する**: 良い行動に「良い」の札を付けて、VLA を学習する"),
+    (1, "③ **方策を学習する**: 良い行動に「良い」の条件（positive）を付けて、VLA を学習する"),
     (0, "**利点**"),
     (1, "方策勾配が不要で、flow matching の VLA にもスケールする"),
     (1, "デモ・自律ロールアウト・人の介入を、同じ枠組みで使える"),
     (0, "**論文の結果**: 洗濯物たたみ・エスプレッソ作り・箱の組み立てで、成功率とスループットが改善。難しいタスクでは、失敗率が 1/2 以下"),
 ], size=15)
-nodes = [("① 集める\n（ロールアウト）", 7.7, 1.2), ("② 価値関数 V を学習\n（成功への近さを予想）", 7.7, 2.75), ("③ 「良い」札付きで\n方策を学習", 7.7, 4.3)]
+nodes = [("① 集める\n（ロールアウト）", 7.7, 1.2), ("② 価値関数 V を学習\n（成功への近さを予想）", 7.7, 2.75), ("③ 「良い」条件付きで\n方策を学習", 7.7, 4.3)]
 for t, x, y in nodes:
     box(s, x, y, 3.6, 1.0, t.split("\n"), fill=LIGHT, line=BLUE, size=15, bold=True, name=t.split("\n")[0])
 arrow(s, 9.5, 2.2, 9.5, 2.75)
@@ -628,7 +628,7 @@ arrow(s, 11.3, 4.8, 12.3, 4.8)
 arrow(s, 12.3, 4.8, 12.3, 1.7)
 arrow(s, 12.3, 1.7, 11.3, 1.7)
 textbox(s, 11.4, 5.35, 1.6, 0.6, [dict(text="新しい方策で\n再収集", size=12, color=GRAY, align=PP_ALIGN.CENTER)])
-key_box(s, "「良い行動」を選んで学習するための札を、価値関数から作る。それが RECAP の核心")
+key_box(s, "「良い行動」を選んで学習するための条件（positive）を、価値関数から作る。それが RECAP の核心")
 
 # ================ new fig_recap
 s = new_slide("RECAP: アーキテクチャ（論文の図）", "論文 π*0.6 の図 3 より。下が価値関数、上が VLA。")
@@ -636,10 +636,10 @@ fig_pic(s, "fig_recap.png", 0.6, 1.05, 6.6, 4.85, "図: π*0.6 論文（Physical
 side_notes(s, 7.4, 1.1, 5.3, [
     ("価値関数（図の下）", "画像と指示文から、価値 V を出す（SigLIP + Gemma 270M に、value head を付けたもの）"),
     ("advantage", "A = r + V(o_t+N) − V(o_t)。行動の前後で、成功に近づいたか"),
-    ("2 値化", "A > ε なら「良い」。この札（metadata）を、VLA の入力に加える"),
-    ("VLA（図の上）", "画像・指示文・札から、行動を出す。離散化した行動と、action expert（860M）が出す連続の行動"),
+    ("2 値化", "A > ε なら「良い」。この条件を、VLA の入力に加える"),
+    ("VLA（図の上）", "画像・指示文・条件から、行動を出す。離散化した行動と、action expert（860M）が出す連続の行動"),
 ], h=1.1, size=13)
-key_box(s, "価値関数が作った「良い/悪い」の札を、VLA の入力に加えて学習する")
+key_box(s, "価値関数が作った「良い/悪い」の条件を、VLA の入力に加えて学習する")
 
 # ================ new recap_return
 s = new_slide("RECAP: return の計算方法", "Step1。実データ 368 エピソード（r1_m0）で、この式と一致することを確認済み。")
@@ -781,13 +781,13 @@ spec_table(s, 0.6, 4.15, 12.1, [
 key_box(s, "Critic（価値モデル）は、画像を見て「成功まであとどれくらいか」を当てる問題として学習する", y=6.35, h=0.6)
 
 # ================ new recap_adv
-s = new_slide("RECAP ②: advantage の計算と「良い/悪い」の札", "Step3。モデルの更新はなく、データに札を付ける処理。")
+s = new_slide("RECAP ②: advantage の計算と「良い/悪い」の条件", "Step3。モデルの更新はなく、データに条件（positive）を付ける処理。")
 node(s, 0.6, 1.15, 3.6, 0.8, "いまの価値 V(o_t)", kind="data", size=14, name="v0")
 node(s, 0.6, 2.1, 3.6, 0.8, "10 ステップ後の価値 V(o_t+10)", kind="data", size=14, name="v1")
 node(s, 0.6, 3.05, 3.6, 0.8, "その間の報酬の合計 r", kind="data", size=14, name="r")
 node(s, 5.0, 1.65, 3.2, 1.7, "advantage", ["A = r + V(o_t+10) − V(o_t)", "（行動の前後の変化）"], kind="loss", size=15, name="adv")
 node(s, 9.0, 1.15, 3.7, 1.15, "上位 30%", ["→ positive（良い）"], kind="out", size=15, name="pos")
-node(s, 9.0, 2.7, 3.7, 1.15, "それ以外", ["→ negative（札なし）"], kind="frozen", size=15, name="neg")
+node(s, 9.0, 2.7, 3.7, 1.15, "それ以外", ["→ negative（条件なし）"], kind="frozen", size=15, name="neg")
 for y in (1.55, 2.5, 3.45):
     arrow(s, 4.2, y, 5.0, 2.5)
 arrow(s, 8.2, 2.5, 9.0, 1.7)
@@ -799,12 +799,12 @@ ws = [2.2, 2.3, 1.95, 2.85, 2.15]
 for (t, k), x, w in zip(ex, xs, ws):
     node(s, x, 4.5, w, 0.9, t, kind=k, size=13, name=f"ex {t[:6]}")
 textbox(s, 0.6, 5.55, 12.1, 0.55, [dict(text="閾値は、全データの advantage を並べて、上位 30% に入る値。人のデモは、全て positive にする", size=13, color=GRAY)])
-key_box(s, "行動の前後で、成功に近づいたか（V が上がったか）で、「良い」の札を付けるフレームを決める")
+key_box(s, "V が上がったか（成功に近づいたか）で、「良い」の条件（positive）を付けるフレームを決める")
 
 # ================ new recap_policy
-s = new_slide("RECAP ③: 方策の学習（入力・出力・更新）", "Step4。札を付けたデータで VLA を学習する。実行時は『良い』の札を付ける。")
+s = new_slide("RECAP ③: 方策の学習（入力・出力・更新）", "Step4。条件（positive）を付けたデータで VLA を学習する。実行時は『良い』の条件を付ける。")
 textbox(s, 0.6, 1.0, 2.0, 0.4, [dict(text="学習時", size=16, bold=True, color=BLUE)])
-node(s, 0.6, 1.4, 3.3, 1.3, "入力", ["カメラ画像・関節状態・指示文", "+ 札「Advantage: positive」"], kind="data", size=14, name="in")
+node(s, 0.6, 1.4, 3.3, 1.3, "入力", ["カメラ画像・関節状態・指示文", "+ 条件「Advantage: positive」"], kind="data", size=14, name="in")
 node(s, 4.5, 1.4, 2.6, 1.3, "VLA（smolVLA）", ["更新する", "（損失を小さく）"], kind="train", size=15, name="vla")
 node(s, 7.7, 1.4, 2.2, 1.3, "予測した", ["行動チャンク"], kind="data", size=14, name="pred")
 node(s, 10.5, 1.4, 2.2, 1.3, "損失", ["予測と実際の", "行動のズレ"], kind="loss", size=14, name="loss")
@@ -813,15 +813,15 @@ arrow(s, 7.1, 2.05, 7.7, 2.05)
 arrow(s, 9.9, 2.05, 10.5, 2.05)
 node(s, 7.7, 3.05, 5.0, 0.55, "正解: データの実際の行動チャンク", kind="data", size=13, name="teacher")
 arrow(s, 11.6, 3.05, 11.6, 2.7)
-textbox(s, 0.6, 2.95, 6.8, 0.6, [dict(text="positive のフレームには札を付け、10% の確率で札を外す（札なしの方策も一緒に学習）", size=12, color=GRAY)])
+textbox(s, 0.6, 2.95, 6.8, 0.6, [dict(text="positive のフレームには条件を付け、10% の確率で条件を外す（条件なしの方策も一緒に学習）", size=12, color=GRAY)])
 textbox(s, 0.6, 3.85, 2.0, 0.4, [dict(text="実行時（評価）", size=16, bold=True, color=GREEN)])
-node(s, 0.6, 4.25, 3.3, 1.3, "入力", ["カメラ画像・関節状態・指示文", "+ 札「Advantage: positive」"], kind="data", size=14, name="in2")
+node(s, 0.6, 4.25, 3.3, 1.3, "入力", ["カメラ画像・関節状態・指示文", "+ 条件「Advantage: positive」"], kind="data", size=14, name="in2")
 node(s, 4.5, 4.25, 2.6, 1.3, "VLA（学習済み）", ["更新しない"], kind="frozen", size=15, name="vla2")
-node(s, 7.7, 4.25, 5.0, 1.3, "出力: 行動チャンク", ["「良い」の札を付けたので、良い行動が出やすい"], kind="out", size=15, name="out2")
+node(s, 7.7, 4.25, 5.0, 1.3, "出力: 行動チャンク", ["「良い」の条件を付けたので、良い行動が出やすい"], kind="out", size=15, name="out2")
 arrow(s, 3.9, 4.9, 4.5, 4.9)
 arrow(s, 7.1, 4.9, 7.7, 4.9)
 legend(s, 0.6, 5.7)
-key_box(s, "学習では「良い札付き」のデータを多く見せ、実行時に「良い」の札を付けて、良い行動を引き出す", y=6.3, h=0.65)
+key_box(s, "学習では「良い条件付き」のデータを多く見せ、実行時に「良い」の条件を付けて、良い行動を引き出す", y=6.3, h=0.65)
 
 # ================ new recap_eq
 s = new_slide("RECAP: 式の補足（論文の式）", "式(1)(3) の記号は論文のもの。式の意味は、直前の 3 枚の図と対応。")
@@ -829,11 +829,11 @@ eq_block(s, 1.0, 1, "**価値関数**: 「これから先の return が、どの
          "min_{φ}  E_{τ}[ Σ_{t} H( R^{B}_{t}(τ), p_{φ}(V | o_{t}, ℓ) ) ]　…(1)")
 eq_block(s, 2.27, 2, "**advantage**: 行動の前後で、成功への近さがどれだけ変わったか（N ステップ先まで見る）",
          "A(o_{t}, a_{t}) = r_{t:t+N} + V(o_{t+N}) − V(o_{t})")
-eq_block(s, 3.54, 3, "**方策の学習**: 「良い」の札付きと、札なしの両方で、データの行動を再現する（I = 1 が「良い」。ε_ℓ は閾値）",
+eq_block(s, 3.54, 3, "**方策の学習**: 「良い」の条件付きと、条件なしの両方で、データの行動を再現する（I = 1 が「良い」。ε_ℓ は閾値）",
          "min_{θ}  E[ − log π_{θ}(a_{t} | o_{t}, ℓ) − α log π_{θ}(a_{t} | I_{t}, o_{t}, ℓ) ] ,　I_{t} = 1[ A > ε_{ℓ} ]　…(3)")
-eq_block(s, 4.81, 4, "**実行時**: 札を「良い」に固定して行動を生成する。β > 1 にすると、「良い」の方向をさらに強調できる",
+eq_block(s, 4.81, 4, "**実行時**: 条件を「良い」に固定して行動を生成する。β > 1 にすると、「良い」の方向をさらに強調できる",
          "π̂(a | o, ℓ) ∝ π(a | o, ℓ) · ( π(a | I, o, ℓ) / π(a | o, ℓ) )^{β}　…(2)")
-key_box(s, "方策は「札あり」と「札なし」の両方を表現できるので、改善確率を明示的に推定しなくてよい", y=6.3)
+key_box(s, "方策は「条件あり」と「条件なし」の両方を表現できるので、改善確率を明示的に推定しなくてよい", y=6.3)
 
 # ================ old 8
 s = new_slide("RECAP: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。名称は私たちのパイプラインの番号。【発表者向け】0.50 は、advantage プロンプトなしで評価した最良値。プロンプトあり（Advantage: positive）では 0.48。Step4 は途中段階（2,000 step）。")
@@ -851,7 +851,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価も positive プロンプトで行う（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
     (0, "**Step5**: success_once は **0.50**（最良。ベース 0.40）。Step4 は途中段階（2,000 step 前後、計画は 30,000 step）で、評価は 0.44〜0.50 の範囲で変動"),
 ], size=17)
-key_box(s, "return の計算 → Critic（価値モデル）の学習 → advantage の計算 → 札付き SFT → 評価、の順に進める")
+key_box(s, "return の計算 → Critic（価値モデル）の学習 → advantage の計算 → 条件付き SFT → 評価、の順に進める")
 
 # ================ new steam_prop
 s = new_slide("STEAM: 提案（論文）", "報酬ラベル不要で、専門家デモだけから advantage を作る点が特徴。")
@@ -862,7 +862,7 @@ textbox(s, 0.6, 1.1, 6.4, 5.0, [
     (0, "**前進 = 良い行動**: 時間が進む方向に動く行動に、高いスコアを付ける"),
     (1, "動画を逆再生すると、「後退」の例も作れる"),
     (0, "**アンサンブル**: 複数の critic のうち、最も厳しい評価（最小値）を使い、過大評価を防ぐ"),
-    (0, "**方策学習**: スコアの高いフレームに札を付けて学習（RECAP と同じ「条件付け」）"),
+    (0, "**方策学習**: スコアの高いフレームに条件（positive）を付けて学習（RECAP と同じ「条件付け」）"),
 ], size=15)
 tl = ["f1", "f2", "f3", "f4", "f5", "f6"]
 for i, t in enumerate(tl):
@@ -881,7 +881,7 @@ fig_pic(s, "fig_steam.png", 0.6, 1.1, 12.1, 2.6, "図: STEAM 論文図 1 より"
 for i, (t, d) in enumerate([
     ("① フレームペアのラベル付け", "専門家デモの 2 つのフレーム（前進 forward / 後退 backward）の時間差を、エピソード長で正規化して、正解にする"),
     ("② 時間オフセット予測器の学習", "2 つのフレームと指示文から、時間差の分布を出す。M 個の予測器を学習して、アンサンブルにする"),
-    ("③ 方策の改善", "専門家・ロールアウト・人の修正のデータに、アンサンブルで A_STEAM を付け、CFGRL（札付き学習）で VLA を学習する"),
+    ("③ 方策の改善", "専門家・ロールアウト・人の修正のデータに、アンサンブルで Advantage を付け、CFGRL（条件付き学習）で VLA を学習する"),
 ]):
     box(s, 0.6 + i * 4.1, 4.15, 3.9, 1.9, [dict(text=t, size=16, bold=True, color=BLUE), dict(text=d, size=14)],
         fill=PALE, line=LGRAY, size=14, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, name=f"panel {i+1}")
@@ -901,7 +901,7 @@ spec_table(s, 0.6, 4.15, 12.1, [
 key_box(s, "critic は、「2 枚のフレームが、時間でどれだけ離れているか」を当てる問題として学習する", y=6.35, h=0.6)
 
 # ================ new steam_adv
-s = new_slide("STEAM ②: advantage の計算（アンサンブルと最小値）", "モデルの更新はなく、データに札を付ける処理。smolVLA の実験では、critic は 1 個（M = 1）。")
+s = new_slide("STEAM ②: advantage の計算（アンサンブルと最小値）", "モデルの更新はなく、データに条件（positive）を付ける処理。smolVLA の実験では、critic は 1 個（M = 1）。")
 node(s, 0.6, 2.0, 2.6, 1.5, "フレームのペア", ["f_i と、H ステップ先の", "f_i+H"], kind="data", size=14, name="pair")
 for j, t in enumerate(("critic 1", "critic 2", "critic M")):
     node(s, 4.0, 1.15 + j * 1.15, 2.2, 0.85, t, ["A_" + str(j + 1 if j < 2 else "M")], kind="frozen", size=14, name=f"c{j}")
@@ -909,10 +909,10 @@ for j, t in enumerate(("critic 1", "critic 2", "critic M")):
     arrow(s, 6.2, 1.58 + j * 1.15, 7.0, 2.75)
 node(s, 7.0, 2.2, 2.0, 1.1, "最小値", ["min_m A_m"], kind="loss", size=15, name="min")
 arrow(s, 9.0, 2.75, 9.6, 2.75)
-node(s, 9.6, 1.9, 3.1, 1.7, "A_STEAM", ["閾値 δ_q 以上なら 1（良い）", "それ以外は 0"], kind="out", size=14, name="label")
+node(s, 9.6, 1.9, 3.1, 1.7, "Advantage", ["閾値 δ_q 以上なら 1（良い）", "それ以外は 0"], kind="out", size=14, name="label")
 box(s, 0.6, 4.75, 5.9, 1.2, ["**なぜ最小値か**", "全ての critic が「前進」と言うときだけ高いスコア。知らない状態での、過大評価を防ぐ"], fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name="why")
 box(s, 6.8, 4.75, 5.9, 1.2, ["**スコアの意味**", "予想した時間差が、基準の時間差より大きいほど、「効率よく前進した」行動"], fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name="meaning")
-key_box(s, "最も厳しい critic の評価で「前進」と判断したフレームにだけ、「良い」の札を付ける", y=6.2)
+key_box(s, "最も厳しい critic の評価で「前進」と判断したフレームにだけ、「良い」の条件（positive）を付ける", y=6.2)
 
 # ================ old 10
 s = new_slide("STEAM: 論文の結果（実機）", "表は論文 Table 1 の成功率（Succ.）のみ。RECAP は同じ CFGRL の骨格で 1 反復。")
@@ -932,7 +932,7 @@ textbox(s, 0.6, 5.0, 12.1, 1.1, [
 key_box(s, "論文では、STEAM が RECAP（1 反復）を全タスクで上回る。タオル折りでは +36.7 pt")
 
 # ================ old 11
-s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。【発表者向け】0.52 は、最初の 1,000 step は札付き SFT、続く 450 step は positive のフレームだけで学習したモデルを、advantage プロンプトなしで評価した値。札付き SFT（プロンプトあり）の評価は 0.42、両側タグ（negative にも札を付ける）は 0.36。")
+s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。【発表者向け】0.52 は、最初の 1,000 step は条件付き SFT、続く 450 step は positive のフレームだけで学習したモデルを、advantage プロンプトなしで評価した値。条件付き SFT（プロンプトあり）の評価は 0.42、両側タグ（negative にも条件を付ける）は 0.36。")
 steps = ["Step1\nフレームペアの作成", "Step2\ncritic の学習", "Step3\nadvantage の計算", "Step4\n方策の学習（SFT）", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
@@ -943,9 +943,8 @@ for i, t in enumerate(steps):
 textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step1**: 人のデモ 3 本（重み 4）と、成功ロールアウトから、k = 32 ステップ先とのフレームペアを作る。逆再生のペアは、負の時間差。時間差は軌跡長で正規化し、32 ビンに分ける"),
     (0, "**Step2**: critic（SigLIP so400m + Gemma3-270M）が、時間差の 32 ビンの分布を予測（**2,000 step、バッチ 64、8.3 時間**、RTX A5000 24GB）"),
-    (1, "学習データ上の accuracy は 0.277 → 0.353。未知のロールアウト（step 600）では 0.106 と低い"),
     (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**62.3 万サンプル、約 9.8 時間、17.7 サンプル/秒**、RTX A5000）"),
-    (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（**合計 1,450 step、16.5 時間**、RTX A5000）"),
+    (0, "**Step4**: 条件付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（**合計 1,450 step、16.5 時間**、RTX A5000）"),
     (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）"),
 ], size=16)
 key_box(s, "critic は学習データ上では改善したが、未知のロールアウトでの精度は低い（課題）")
@@ -1105,7 +1104,7 @@ key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:
 s = new_slide("動画で見る手法の効果（初期状態 14）", "初期状態 14 での比較。ベースと RL Token の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/w3vkksd0（run 名 demo-init14-base-fail-vs-rlt-success）。RECAP の動画は wandb: https://wandb.ai/junhand/libero_RL/runs/30cagwmg（run 名 recap-noprompt-vs-base-init14）。RL Token の動画は H（1 つ目は G の actor、2 つ目は専用 actor）。RECAP の動画は global_step_2000（advantage プロンプトなしで評価、success_once 0.50）。")
 instruction_box(s)
 video_panel(s, 1.3, "ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40")
-video_panel(s, 5.4, "RECAP（札: positive）", "video_init14_recap.mp4", "poster_init14_recap.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.50")
+video_panel(s, 5.4, "RECAP（条件: positive）", "video_init14_recap.mp4", "poster_init14_recap.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.50")
 video_panel(s, 9.5, "RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74")
 textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="クリックで再生（約 52 秒）。success_once は 50 エピソードの値。3 つとも同じ初期状態 14", size=11, color=GRAY)])
 key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RECAP と RL Token は成功した（1 例）", y=6.4, h=0.55)
@@ -1114,7 +1113,7 @@ key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れら�
 s = new_slide("動画で見る手法の効果（初期状態 8）", "初期状態 8 での比較（STEAM）。wandb: https://wandb.ai/junhand/libero_RL/runs/kydvjtsn（run 名 demo-init8-base-fail-vs-steamP-success）。STEAM の動画は実験 P（positive のフレームだけで学習、advantage プロンプトなしで評価、success_once 0.52）。画面の reward / termination の文字は、評価の画面表示。")
 instruction_box(s)
 video_panel(s, 3.2, "ベース（smolVLA）", "video_init8_base.mp4", "poster_init8_base.png", "失敗", ORANGE, "缶がカゴの外のテーブルに残る", "success_once 0.40")
-video_panel(s, 7.6, "STEAM（札: positive）", "video_init8_steam.mp4", "poster_init8_steam.png", "成功", GREEN, "缶がカゴの中に入る", "success_once 0.52")
+video_panel(s, 7.6, "STEAM（条件: positive）", "video_init8_steam.mp4", "poster_init8_steam.png", "成功", GREEN, "缶がカゴの中に入る", "success_once 0.52")
 textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="クリックで再生（約 52 秒）。success_once は 50 エピソードの値。初期状態 8（前のページの初期状態 14 とは別）", size=11, color=GRAY)])
 key_box(s, "同じ初期状態 8 で、ベースは失敗し、STEAM は成功した（1 例）", y=6.4, h=0.55)
 
