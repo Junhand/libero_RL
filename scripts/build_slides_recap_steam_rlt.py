@@ -508,7 +508,7 @@ for label, text in rows:
     y += 0.9
 
 # ================ old 3
-s = new_slide("書誌情報", "3 論文の書誌。本資料の日本語訳は docs/ にある（機械翻訳）。")
+s = new_slide("書誌情報", "3 論文の書誌と、実装基盤 RLinf への変更。本資料の日本語訳は docs/ にある（機械翻訳）。RLinf への変更は patches/rlinf/*.patch にまとめている（RLinf のファイルは直接編集していない）。")
 rows = [
     ["手法", "論文", "所属", "主な著者", "arXiv"],
     ["RECAP", "π*0.6: a VLA That Learns From Experience", "Physical Intelligence", "Ali Amin, Sergey Levine ほか", "2511.14759\n（2025/11）"],
@@ -517,12 +517,18 @@ rows = [
     ["RL Token", "RL Token: Bootstrapping Online RL with Vision-Language-Action Models",
      "Physical Intelligence", "Charles Xu, Jost Tobias Springenberg, Sergey Levine, Liyiming Ke ほか", "2604.23073\n（2026/04）"],
 ]
-table(s, 0.6, 1.2, 12.1, [1.3, 3.8, 2.4, 2.9, 1.7], rows, size=14, row_h=1.0, header_h=0.5)
-textbox(s, 0.6, 4.95, 12.1, 1.1, [
-    (0, "実装基盤: **RLinf**（強化学習の学習基盤。RECAP / STEAM のパイプラインと、RL Token 用の actor-critic を使用）"),
-    (0, "ベースモデル: **smolVLA**（lerobot/smolvla_libero、約 4.5 億パラメータ）。参考値として、RLinf のチュートリアルにある π₀.₅ の RECAP 結果も使う"),
-], size=15)
-key_box(s, "論文の内容（引用）と、私たちの実験（smolVLA）を、スライド上で区別して示す")
+table(s, 0.6, 1.1, 12.1, [1.3, 3.8, 2.4, 2.9, 1.7], rows, size=13, row_h=0.7, header_h=0.4)
+textbox(s, 0.6, 3.8, 12.1, 0.4, [dict(text="実装基盤 RLinf に、smolVLA（約 4.5 億パラメータ）で実験するための変更を加えた", size=15, bold=True, color=BLUE)])
+changes = [
+    ("共通", "smolVLA の組み込み", "smolVLA を RLinf のモデルとして登録。LIBERO のロールアウト収集・評価の設定を追加"),
+    ("RECAP・STEAM", "札付き学習とデータ処理", "advantage の札（\"Advantage: positive\"）を付けた SFT と、advantage 計算の安定化（中断からの再開、デコードエラーの再試行）"),
+    ("RL Token", "RL の部品", "凍結した smolVLA と RL token の組み込み、LIBERO での把持の判定・報酬・2 つの局面の扱い"),
+]
+for i_, (tag, title_, desc) in enumerate(changes):
+    y = 4.3 + i_ * 0.66
+    box(s, 0.6, y, 1.7, 0.58, tag, fill=BLUE, line=None, size=13, color=WHITE, bold=True, name=f"change tag {tag}")
+    box(s, 2.4, y, 10.3, 0.58, [dict(text=title_ + ": " + desc, size=13)], fill=PALE, line=LGRAY, size=13, align=PP_ALIGN.LEFT, name=f"change {tag}")
+key_box(s, "論文の内容（引用）と、SmolVLA による実験結果を紹介する", y=6.38, h=0.58)
 
 # ================ new basics
 s = new_slide("強化学習の基本用語", "強化学習を知らない人向けの前提。『やってみて、結果から、良い行動を増やす』が一言。")
