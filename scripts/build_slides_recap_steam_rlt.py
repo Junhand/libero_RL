@@ -20,7 +20,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "RECAP_STEAM_RLToken.pptx"
 # ---------------------------------------------------------------- results (edit here)
 R = dict(
     pi05_sft=48.8, pi05_recap=66.5,
-    base=40.0, recap=50.0, steam=48.0, rlt=68.0,
+    base=40.0, recap=50.0, steam=52.0, rlt=68.0,
 )
 
 FONT = "Yu Gothic"
@@ -450,7 +450,7 @@ rows = [
             "**RL Token**: 凍結した VLA の読み出しトークンの上で、軽量な actor-critic をオンライン学習"),
     ("実験", "smolVLA（lerobot/smolvla_libero）で、Task 0（2 つの物体をカゴへ）の success_once を、固定の初期状態 50 個で測る。実装は RLinf"),
     ("結果", f"ベース {R['base']/100:.2f} に対し、^^RL Token が {R['rlt']/100:.2f}^^、RECAP が {R['recap']/100:.2f}、STEAM が {R['steam']/100:.2f}（いずれも最良値）。"
-            "RECAP と STEAM は学習の途中段階で、差は評価の標準誤差（±0.07）の範囲内"),
+            "RECAP と STEAM は学習の途中段階で、ベースとの差は、50 エピソードの評価では有意とは言えない"),
     ("結論", "3 手法は、RL が作用する場所が違う（方策の学習目標 / advantage の推定器 / 行動の洗練）。成功で打ち切る収集設計が、価値の信号に重要だった"),
 ]
 y = 1.15
@@ -571,7 +571,7 @@ stats = [("50", "初期状態（固定）"), ("0.40", "ベースの success_once
 for i, (n, label) in enumerate(stats):
     y = 1.15 + i * 1.65
     box(s, 8.7, y, 4.0, 1.45, [dict(text=n, size=40, bold=True, color=BLUE), dict(text=label, size=15)], fill=PALE, line=None, size=15, name=f"stat {n}")
-key_box(s, "評価は 50 エピソード。標準誤差は約 ±0.07 なので、0.05 程度の差は有意とは言えない")
+key_box(s, "評価は 50 エピソード。2 つの評価の差の誤差は約 ±0.1 なので、0.1 程度の差は有意とは言えない")
 
 # ================ new recap_prop
 s = new_slide("RECAP: 提案（論文: π*0.6）", "RECAP は、価値関数の出力を『良い/悪い』の札として方策に条件付けるのが核心。")
@@ -819,6 +819,7 @@ textbox(s, 0.6, 1.1, 6.0, 5.0, [
     (1, "accuracy 0.277 → 0.353"),
     (1, "隣接ビンを含む accuracy 0.375 → 0.569"),
     (0, "**未知のロールアウト**（eval 64 本、step 600）: accuracy 0.106、隣接 0.189。失敗エピソードを含むため、学習時より低い"),
+    (0, "**Step4 の結果**: 0.52（正例のみで学習、step 1,450、プロンプトなし）。プロンプトありは 0.42、両側タグは 0.36"),
 ], size=16)
 cd = CategoryChartData()
 cd.categories = ["500-600", "600-700", "700-800", "800-1000", "1000-1200", "1200-1400", "1400-1600", "1600-1800", "1800-2000"]
@@ -1009,10 +1010,10 @@ for i, col in enumerate((LGRAY, SLATE, LGRAY, SLATE, SLATE, GREEN)):
     pt.format.fill.solid()
     pt.format.fill.fore_color.rgb = col
 textbox(s, 0.6, 5.15, 12.1, 1.1, [
-    (0, f"smolVLA: 各 50 エピソード（標準誤差 ±0.07）。RECAP・STEAM は、Step4 の途中の checkpoint（step 2,000 前後）の最良値（advantage プロンプトなしの評価を含む。プロンプトありは、RECAP 0.48、STEAM 0.42）"),
+    (0, f"smolVLA: 各 50 エピソード（標準誤差 ±0.07）。RECAP・STEAM は、Step4 の途中の checkpoint の最良値。どちらも advantage プロンプトなしの評価（STEAM は、正例のみで学習した step 1,450）。プロンプトありは、RECAP 0.48、STEAM 0.42"),
     (0, "π₀.₅ は RLinf チュートリアルの記載値で、モデル・設定・評価数が異なり、smolVLA との直接比較はできない"),
 ], size=12, color=GRAY, space=3)
-key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:.0f}%）。RECAP・STEAM は誤差の範囲内で、途中段階")
+key_box(s, f"smolVLA では RL Token が最良（{R['base']:.0f}% → {R['rlt']:.0f}%）。RECAP・STEAM は途中段階で、差は有意とは言えない")
 
 # ================ old 16
 s = new_slide("考察: 3 手法の比較", "表は定性的な比較。smolVLA での経験に基づく。")
@@ -1034,7 +1035,7 @@ box(s, 0.6, 1.1, 5.9, 0.6, "まとめ", fill=BLUE, line=None, size=20, color=WHI
 textbox(s, 0.6, 1.85, 5.9, 3.0, [
     (0, "3 手法は、VLA の経験からの改善を、異なる場所で実現する"),
     (0, f"smolVLA では **RL Token が最良**（{R['base']/100:.2f} → {R['rlt']/100:.2f}）"),
-    (0, f"RECAP・STEAM は、Step4 の途中段階の最良値で {R['steam']/100:.2f}〜{R['recap']/100:.2f}。差は誤差の範囲内"),
+    (0, f"RECAP・STEAM は、Step4 の途中段階の最良値で {min(R['steam'], R['recap'])/100:.2f}〜{max(R['steam'], R['recap'])/100:.2f}。ベースとの差は、有意とは言えない"),
     (0, "成功で打ち切る収集設計が、価値・critic の信号に重要"),
 ], size=17)
 box(s, 6.8, 1.1, 5.9, 0.6, "今後", fill=GREEN, line=None, size=20, color=WHITE, bold=True, name="future head")
@@ -1044,7 +1045,7 @@ textbox(s, 6.8, 1.85, 5.9, 3.0, [
     (0, "評価を 100 エピソード以上にして、標準誤差を縮める"),
     (0, "RL Token を、LIBERO-10 の他のタスクに広げる"),
 ], size=17)
-strip = [("ベース", R["base"], LGRAY, BLACK), ("STEAM", R["steam"], SLATE, WHITE), ("RECAP", R["recap"], SLATE, WHITE), ("RL Token", R["rlt"], GREEN, WHITE)]
+strip = [("ベース", R["base"], LGRAY, BLACK), ("RECAP", R["recap"], SLATE, WHITE), ("STEAM", R["steam"], SLATE, WHITE), ("RL Token", R["rlt"], GREEN, WHITE)]
 for i, (n, v, col, tc) in enumerate(strip):
     box(s, 0.6 + i * 3.05, 4.85, 2.85, 1.2, [dict(text=f"{v/100:.2f}", size=32, bold=True, color=tc), dict(text=n, size=15, color=tc)],
         fill=col, line=None, size=15, name=f"result {n}")
