@@ -499,7 +499,7 @@ rows = [
     ("実験", "smolVLA（lerobot/smolvla_libero）で、Task 0（2 つの物体をカゴへ）の success_once を、固定の初期状態 50 個で測る。実装は RLinf"),
     ("結果", f"ベース {R['base']/100:.2f} に対し、^^RL Token が {R['rlt']/100:.2f}^^、RECAP が {R['recap']/100:.2f}、STEAM が {R['steam']/100:.2f}（いずれも最良値）。"
             "RECAP と STEAM は学習の途中段階で、ベースとの差は、50 エピソードの評価では有意とは言えない"),
-    ("結論", "RECAP と STEAM は、どちらも advantage から「良い」の札を作って方策を学習し、評価者（advantage の作り方）だけが違う。RL Token は、オンライン RL で行動を洗練する"),
+    ("結論", "RECAP と STEAM は、どちらも advantage から「良い」の札を作って方策を学習し、Critic（advantage の作り方）だけが違う。RL Token は、オンライン RL で行動を洗練する"),
 ]
 y = 1.15
 for label, text in rows:
@@ -541,27 +541,27 @@ terms = [
     ("return", "これから先に得られる報酬の合計"),
     ("価値 V", "いまの状態から、将来得られる return の予想"),
     ("advantage A", "その行動で、予想よりどれだけ良くなったか（実際 − 予想）"),
-    ("評価者（critic）", "状態や行動の良さを、数値で答えるモデル。RECAP は価値関数 V、STEAM は時間差を当てる critic"),
+    ("Critic", "状態や行動の良さを、数値で答えるモデル。RECAP は価値関数 V、STEAM は時間差を当てるモデル"),
 ]
 for i, (t, d) in enumerate(terms):
     y = 1.1 + i * 0.84
     box(s, 6.9, y, 1.9, 0.74, t, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"term {t}")
     textbox(s, 8.9, y - 0.02, 3.9, 0.78, [dict(text=d, size=13)], anchor=MSO_ANCHOR.MIDDLE, name=f"def {t}")
-key_box(s, "RL は、結果から良い行動を増やす学習。RECAP・STEAM は、評価者（critic）で advantage を作る")
+key_box(s, "RL は、結果から良い行動を増やす学習。RECAP・STEAM は、Critic で advantage を作る")
 
 # ================ old 4
-s = new_slide("背景: なぜ VLA に強化学習か", "RECAP と STEAM は評価者（advantage の作り方）だけが違う。RL Token は、オンラインで行動を洗練する、という整理が主題。")
+s = new_slide("背景: なぜ VLA に強化学習か", "RECAP と STEAM は Critic（advantage の作り方）だけが違う。RL Token は、オンラインで行動を洗練する、という整理が主題。")
 textbox(s, 0.6, 1.1, 5.6, 4.9, [
     (0, "**VLA は、模倣学習（SFT）で多様な技能を学べる**"),
     (1, "ただし、実タスクが要求する精度・速度・失敗からの回復には届かない"),
     (0, "**強化学習（RL）で、自分の経験から改善したい**"),
     (1, "10 億パラメータ級のモデル全体を、オンラインで更新するのは、計算コストもサンプル効率も悪い"),
     (1, "flow matching の行動生成は、対数尤度が扱いにくく、方策勾配法（PPO など）を適用しにくい"),
-    (0, "**3 手法の位置づけ**: RECAP と STEAM は評価者だけが違う。RL Token は、行動を洗練する"),
+    (0, "**3 手法の位置づけ**: RECAP と STEAM は Critic だけが違う。RL Token は、行動を洗練する"),
 ], size=17)
 cards = [
-    ("RECAP", "方策の学習目標", "評価者は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
-    ("STEAM", "方策の学習目標", "評価者は、時間オフセットを当てる critic のアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
+    ("RECAP", "方策の学習目標", "Critic は価値関数。成功への近さ V から advantage を作り、「良い」の札を付けて方策を学習する"),
+    ("STEAM", "方策の学習目標", "Critic は、時間オフセットを当てるモデルのアンサンブル。advantage を作り、同じ札付きの学習で方策を学習する"),
     ("RL Token", "行動の洗練", "VLA は凍結。読み出しトークンの上の小さな actor-critic が、オンライン RL で VLA の行動を改善する"),
 ]
 for i, (t, where, desc) in enumerate(cards):
@@ -569,7 +569,7 @@ for i, (t, where, desc) in enumerate(cards):
     box(s, 6.5, y, 2.0, 1.5, [f"^^{t}^^"], fill=PALE, line=BLUE, size=20, name=f"card {t}")
     box(s, 8.6, y, 4.1, 1.5, [f"**{where}**", desc], fill=WHITE, line=LGRAY, size=14,
         align=PP_ALIGN.LEFT, name=f"desc {t}")
-key_box(s, "RECAP と STEAM は評価者だけが違う。RL Token は、オンラインで行動を洗練する")
+key_box(s, "RECAP と STEAM は Critic だけが違う。RL Token は、オンラインで行動を洗練する")
 
 # ================ old 5
 s = new_slide("実験設定", "評価は 50 エピソード。標準誤差が大きいことを最初に断っておく。")
@@ -1056,32 +1056,32 @@ key_box(s, "合計: RECAP 約 45 時間、STEAM 約 35 時間、RL Token 約 14 
 # ================ old 16
 s = new_slide("考察: 3 手法の比較", "表は定性的な比較。smolVLA での経験に基づく。")
 rows = [
-    ["", "RL が作用する場所", "評価者", "学習データ", "長所", "課題"],
+    ["", "RL が作用する場所", "Critic", "学習データ", "長所", "課題"],
     ["RECAP", "方策の学習目標（advantage 条件付き SFT）", "価値関数（return を予測）",
      "ロールアウト（成功・失敗）、人のデモ",
      "方策勾配が不要で、flow matching の VLA に使える。デモ・ロールアウト・人の介入を、同じ枠組みで使える", "学習が重く、時間がかかる"],
-    ["STEAM", "方策の学習目標（RECAP と同じ条件付き SFT）", "時間オフセットの critic のアンサンブル",
+    ["STEAM", "方策の学習目標（RECAP と同じ条件付き SFT）", "時間オフセット予測器のアンサンブル",
      "人のデモ（自己教師あり）、成功ロールアウト",
      "報酬や手作りのラベルが不要で、デモから advantage を学べる。アンサンブルの最小値で、過大評価を抑える", "学習が重く、時間がかかる"],
-    ["RL Token", "行動の洗練（凍結 VLA の出力）", "小さな critic（Q 関数）",
+    ["RL Token", "行動の洗練（凍結 VLA の出力）", "Q 関数（行動の価値を予測）",
      "オンラインで集めるロールアウト（環境と報酬）",
      "軽量（actor は約 5 MB）で、約 5 時間で学習。success_once 0.46 → 0.74", "報酬設計が必要"],
 ]
 table(s, 0.6, 1.1, 12.1, [1.1, 2.0, 2.0, 2.2, 3.1, 1.7], rows, size=13, row_h=1.3, header_h=0.55, bold_rows=(), align_cols=None)
-key_box(s, "RECAP と STEAM は、評価者（と学習データ）が違う。RL Token は、行動を直す。目的は補完的")
+key_box(s, "RECAP と STEAM は、Critic（と学習データ）が違う。RL Token は、行動を直す。目的は補完的")
 
 # ================ old 17
 s = new_slide("まとめと課題", "残された課題: Step4 の学習量、critic の精度。")
 box(s, 0.6, 1.1, 5.9, 0.6, "まとめ", fill=BLUE, line=None, size=20, color=WHITE, bold=True, name="summary head")
 textbox(s, 0.6, 1.85, 5.9, 3.0, [
-    (0, "RECAP と STEAM は評価者が違う（advantage 条件付き学習）。RL Token は、オンライン RL で行動を洗練する"),
+    (0, "RECAP と STEAM は Critic が違う（advantage 条件付き学習）。RL Token は、オンライン RL で行動を洗練する"),
     (0, f"smolVLA では **RL Token が最良**（{R['base']/100:.2f} → {R['rlt']/100:.2f}）"),
     (0, f"RECAP・STEAM は、Step4 の途中段階の最良値で {min(R['steam'], R['recap'])/100:.2f}〜{max(R['steam'], R['recap'])/100:.2f}。ベースとの差は、有意とは言えない"),
 ], size=16)
 box(s, 6.8, 1.1, 5.9, 0.6, "課題", fill=GREEN, line=None, size=20, color=WHITE, bold=True, name="issues head")
 textbox(s, 6.8, 1.85, 5.9, 3.0, [
     (0, "RECAP・STEAM の Step4 は途中段階（計画の 30,000 step に対し、2,000 step 前後）"),
-    (0, "STEAM の critic は、未知のロールアウトでの精度が低く、アンサンブルも 1 個"),
+    (0, "STEAM の Critic は、未知のロールアウトでの精度が低く、アンサンブルも 1 個"),
 ], size=16)
 strip = [("ベース", R["base"], LGRAY, BLACK), ("RECAP", R["recap"], SLATE, WHITE), ("STEAM", R["steam"], SLATE, WHITE), ("RL Token", R["rlt"], GREEN, WHITE)]
 for i, (n, v, col, tc) in enumerate(strip):
