@@ -544,12 +544,13 @@ terms = [
     ("return", "これから先に得られる報酬の合計"),
     ("価値 V", "いまの状態から、将来得られる return の予想"),
     ("advantage A", "その行動で、予想よりどれだけ良くなったか（実際 − 予想）"),
+    ("評価者（critic）", "状態や行動の良さを、数値で答えるモデル。RECAP は価値関数 V、STEAM は時間差を当てる critic"),
 ]
 for i, (t, d) in enumerate(terms):
-    y = 1.15 + i * 0.99
-    box(s, 6.9, y, 1.7, 0.85, t, fill=BLUE, line=None, size=15, color=WHITE, bold=True, name=f"term {t}")
-    textbox(s, 8.7, y - 0.02, 4.1, 0.9, [dict(text=d, size=13)], anchor=MSO_ANCHOR.MIDDLE, name=f"def {t}")
-key_box(s, "RL は「やってみて、結果の良し悪しから、良い行動を増やす」学習。RECAP・STEAM は advantage を使う")
+    y = 1.1 + i * 0.84
+    box(s, 6.9, y, 1.9, 0.74, t, fill=BLUE, line=None, size=14, color=WHITE, bold=True, name=f"term {t}")
+    textbox(s, 8.9, y - 0.02, 3.9, 0.78, [dict(text=d, size=13)], anchor=MSO_ANCHOR.MIDDLE, name=f"def {t}")
+key_box(s, "RL は、結果から良い行動を増やす学習。RECAP・STEAM は、評価者（critic）で advantage を作る")
 
 # ================ old 5
 s = new_slide("実験設定", "評価は 50 エピソード。標準誤差が大きいことを最初に断っておく。")
