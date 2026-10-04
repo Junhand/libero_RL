@@ -243,7 +243,7 @@ def arrow(slide, x1, y1, x2, y2, color=BLUE, width=2.0):
 
 
 def table(slide, x, y, w, col_w, rows, size=14, row_h=0.45, header_fill=BLUE, bold_rows=(), hl_rows=(), hl_fill=LIGHT,
-          align_cols=None, header_h=None):
+          align_cols=None, header_h=None, row_fills=None):
     nrows, ncols = len(rows), len(rows[0])
     gs = slide.shapes.add_table(nrows, ncols, Inches(x), Inches(y), Inches(w), Inches(row_h * nrows))
     tbl = gs.table
@@ -268,7 +268,7 @@ def table(slide, x, y, w, col_w, rows, size=14, row_h=0.45, header_fill=BLUE, bo
             hdr = i == 0
             _runs(p, str(val), size, bold=hdr or i in bold_rows, color=WHITE if hdr else BLACK)
             c.fill.solid()
-            c.fill.fore_color.rgb = header_fill if hdr else (hl_fill if i in hl_rows else WHITE if i % 2 else PALE)
+            c.fill.fore_color.rgb = header_fill if hdr else (row_fills[i] if row_fills else (hl_fill if i in hl_rows else WHITE if i % 2 else PALE))
     return gs
 
 
@@ -1052,7 +1052,7 @@ rows = [
     ["RL Token", "2 つ目専用の actor", "400 エポック", "512", "約 5.5 時間（約 49 秒/エポック）", A5],
 ]
 table(s, 0.6, 1.1, 12.1, [1.0, 2.3, 2.6, 0.8, 3.2, 2.2], rows, size=12, row_h=0.46, header_h=0.42,
-      hl_rows=(4, 5, 6, 8, 9), align_cols={3: PP_ALIGN.CENTER})
+      row_fills=[None, WHITE, WHITE, WHITE, LIGHT, LIGHT, LIGHT, WHITE, WHITE, WHITE], align_cols={3: PP_ALIGN.CENTER})
 textbox(s, 0.6, 5.72, 12.1, 0.55, [dict(text="バッチは global batch（RL Token の Stage 2 は micro 128）。RL Token の 1 エポック = 3 環境のロールアウトと更新。RECAP の advantage は、merged（175.8 万フレーム）のうち 62.3 万サンプル分", size=11, color=GRAY)])
 key_box(s, "合計: RECAP 約 45 時間、STEAM 約 25 時間（advantage 計算を除く）、RL Token 約 14 時間", y=6.35, h=0.6)
 
