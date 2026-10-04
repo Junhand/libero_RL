@@ -859,7 +859,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step1**: 人のデモ 3 本（重み 4）と、成功ロールアウトから、k = 32 ステップ先とのフレームペアを作る。逆再生のペアは、負の時間差。時間差は軌跡長で正規化し、32 ビンに分ける"),
     (0, "**Step2**: critic（SigLIP so400m + Gemma3-270M）が、時間差の 32 ビンの分布を予測（**2,000 step、バッチ 64、8.3 時間**、RTX A5000 24GB）"),
     (1, "学習データ上の accuracy は 0.277 → 0.353。未知のロールアウト（step 600）では 0.106 と低い"),
-    (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**62.3 万サンプル、約 9.8 時間、17.7 サンプル/秒**、1 GPU（RTX A5000））"),
+    (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**62.3 万サンプル、約 9.8 時間、17.7 サンプル/秒**、RTX A5000）"),
     (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（**合計 1,450 step、16.5 時間**、RTX A5000）"),
     (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）"),
 ], size=16)
@@ -1022,7 +1022,7 @@ instruction_box(s)
 video_panel(s, 1.3, "ベース（smolVLA）", "video_init14_base.mp4", "poster_init14_base.png", "失敗", ORANGE, "1 つ目は運ぶが、2 つ目をカゴに入れられない", "success_once 0.40")
 video_panel(s, 5.4, "RECAP（札: positive）", "video_init14_recap.mp4", "poster_init14_recap.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.50")
 video_panel(s, 9.5, "RL Token（最良）", "video_init14_rlt.mp4", "poster_init14_rlt.png", "成功", GREEN, "2 つともカゴに入る", "success_once 0.74")
-textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="2 環境のうち左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。3 つとも同じ初期状態 14", size=11, color=GRAY)])
+textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="クリックで再生（約 52 秒）。success_once は 50 エピソードの値。3 つとも同じ初期状態 14", size=11, color=GRAY)])
 key_box(s, "同じ初期状態で、ベースは 2 つ目をカゴに入れられず失敗し、RECAP と RL Token は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new videos8
@@ -1030,7 +1030,7 @@ s = new_slide("動画で見る手法の効果（初期状態 8）", "初期状�
 instruction_box(s)
 video_panel(s, 3.2, "ベース（smolVLA）", "video_init8_base.mp4", "poster_init8_base.png", "失敗", ORANGE, "缶がカゴの外のテーブルに残る", "success_once 0.40")
 video_panel(s, 7.6, "STEAM（札: positive）", "video_init8_steam.mp4", "poster_init8_steam.png", "成功", GREEN, "缶がカゴの中に入る", "success_once 0.52")
-textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="2 環境のうち左側を 512 × 512 に拡大。クリックで再生（約 52 秒）。success_once は 50 エピソードの値。初期状態 8（前のページの初期状態 14 とは別）", size=11, color=GRAY)])
+textbox(s, 0.6, 6.0, 12.1, 0.3, [dict(text="クリックで再生（約 52 秒）。success_once は 50 エピソードの値。初期状態 8（前のページの初期状態 14 とは別）", size=11, color=GRAY)])
 key_box(s, "同じ初期状態 8 で、ベースは失敗し、STEAM は成功した（1 例）", y=6.4, h=0.55)
 
 # ================ new cost
@@ -1043,7 +1043,7 @@ rows = [
     ["RECAP", "Step3: advantage 計算", "62.3 万サンプル（推論）", "—", "4.2 時間（41 サンプル/秒）", ADA],
     ["RECAP", "Step4: 方策（SFT）", "2,000 step", "256", "20.3 時間（約 36 秒/step）", ADA],
     ["STEAM", "critic の学習", "2,000 step", "64", "8.3 時間（14.9 秒/step）", A5],
-    ["STEAM", "advantage 計算", "62.3 万サンプル（推論）", "—", "約 9.8 時間（17.7 サンプル/秒）", "RTX A5000（24GB）× 1"],
+    ["STEAM", "advantage 計算", "62.3 万サンプル（推論）", "—", "約 9.8 時間（17.7 サンプル/秒）", A5],
     ["STEAM", "Step4: 方策（SFT）", "1,450 step", "256", "16.5 時間（約 41 秒/step）", A5],
     ["RL Token", "Stage 1: RL token", "6,000 step", "64", "約 25 分", A5],
     ["RL Token", "Stage 2: 1・2 つ目の把持", "750 エポック", "512", "約 8.2 時間", A5],
@@ -1051,7 +1051,6 @@ rows = [
 ]
 table(s, 0.6, 1.1, 12.1, [1.0, 2.3, 2.6, 0.8, 3.2, 2.2], rows, size=12, row_h=0.46, header_h=0.42,
       row_fills=[None, WHITE, WHITE, WHITE, LIGHT, LIGHT, LIGHT, WHITE, WHITE, WHITE], align_cols={3: PP_ALIGN.CENTER})
-textbox(s, 0.6, 5.72, 12.1, 0.55, [dict(text="バッチは global batch（RL Token の Stage 2 は micro 128）。RL Token の 1 エポック = 3 環境のロールアウトと更新。advantage の計算は、RECAP・STEAM とも、merged（175.8 万フレーム）のうち 62.3 万サンプル分。STEAM の時間は、1 GPU で処理した場合の合計（実際は 2 台で分担）", size=11, color=GRAY)])
 key_box(s, "合計: RECAP 約 45 時間、STEAM 約 35 時間、RL Token 約 14 時間", y=6.35, h=0.6)
 
 # ================ old 16
