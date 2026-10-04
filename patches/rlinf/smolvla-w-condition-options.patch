@@ -1,0 +1,60 @@
+--- a/rlinf/data/datasets/recap/smolvla_cfg.py
++++ b/rlinf/data/datasets/recap/smolvla_cfg.py
+@@ -77,6 +77,9 @@
+         reader._query_hf_dataset = types.MethodType(_fast_query_hf_dataset, reader)
+ 
+ 
++NEGATIVE_PROMPT_SUFFIX = "\nAdvantage: negative"
++
++
+ class SmolVLARecapDataset(Dataset):
+     """One LeRobot v3.0 dataset with per-frame advantage labels."""
+ 
+@@ -89,6 +92,8 @@
+         unconditional_prob: float,
+         prompt_suffix: str,
+         video_backend: str | None = None,
++        positive_only: bool = False,
++        negative_prompt: bool = False,
+     ) -> None:
+         from lerobot.datasets.lerobot_dataset import LeRobotDataset
+ 
+@@ -150,6 +155,15 @@
+             ],
+             dtype=bool,
+         )
++        # Optional conditioning variants (default off = original behaviour):
++        #   positive_only:   train only on positive-advantage frames (filtered BC)
++        #   negative_prompt: negative frames get an explicit "Advantage: negative" suffix
++        #                    instead of the plain task prompt (two-sided tags)
++        self.negative_prompt = bool(negative_prompt)
++        if positive_only:
++            keep = np.nonzero(self.advantage)[0]
++            self._indices = self._indices[keep]
++            self.advantage = self.advantage[keep]
+ 
+     def __len__(self) -> int:
+         return len(self._indices)
+@@ -160,8 +174,11 @@
+         sample = {dst: item[src] for src, dst in self.key_map.items()}
+         task = item["task"]
+         # Re-sampled every time, like RLinf's per-step unconditional dropout.
+-        if self.advantage[idx] and torch.rand(()).item() >= self.unconditional_prob:
+-            task = task + self.prompt_suffix
++        if self.advantage[idx]:
++            if torch.rand(()).item() >= self.unconditional_prob:
++                task = task + self.prompt_suffix
++        elif self.negative_prompt:
++            task = task + NEGATIVE_PROMPT_SUFFIX
+         sample["task"] = task
+         return sample
+ 
+@@ -222,6 +239,8 @@
+             unconditional_prob=float(data_cfg.get("unconditional_prob", 0.1)),
+             prompt_suffix=ADVANTAGE_PROMPT_SUFFIX,
+             video_backend=data_cfg.get("video_backend", None),
++            positive_only=bool(data_cfg.get("positive_only", False)),
++            negative_prompt=bool(data_cfg.get("negative_prompt", False)),
+         )
+         weight = float(entry.get("weight", 1.0))
+         if data_cfg.get("balance_dataset_weights", True):
