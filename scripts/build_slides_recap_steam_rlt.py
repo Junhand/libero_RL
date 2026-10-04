@@ -966,6 +966,16 @@ arrow(s, 10.1, 4.4, 10.1, 5.0)
 textbox(s, 10.25, 2.55, 2.4, 0.5, [dict(text="下書き ã", size=12, color=GRAY)])
 key_box(s, "RL は小さな actor-critic だけが担当し、VLA の知識を壊さずに、数時間で行動を洗練できる")
 
+# ================ new fig_rlt_overview
+s = new_slide("RL Token: 全体像（論文の図）", "論文 RL Token の概要図より。左: VLA が RL token を出す。右: RL token を入力に、小さな actor と critic がオンラインで学習する。")
+fig_pic(s, "fig_rl_token_overview.png", 0.6, 1.1, 6.9, 4.9, "図: RL Token 論文（Physical Intelligence）の概要図より")
+side_notes(s, 7.8, 1.15, 4.9, [
+    ("左: RL token を持つ VLA", "VLA が、カメラ画像と指示文（lang）から、行動（action expert）と、RL token（encoder → decoder で圧縮）を出す"),
+    ("右: オンライン RL", "RL token と、VLA の行動（action chunk）を入力に、actor が最終の行動を出し、critic が Q(s, a) を予測する"),
+    ("流れ", "ロボットが動く → 結果を集める → actor と critic を更新する、を繰り返す（図の緑の矢印）"),
+], h=1.4, size=13)
+key_box(s, "VLA は固定したまま、RL token を入力に、小さな actor と critic だけをオンラインで学習する")
+
 # ================ new fig_rlt
 s = new_slide("RL Token: アーキテクチャ（論文の図）", "論文 RL Token の図 2 より。VLA の内部の埋め込みを、1 本の RL token に圧縮する。")
 fig_pic(s, "fig_rl_token.png", 0.6, 1.05, 5.4, 4.85, "図: RL Token 論文（Physical Intelligence）図 2 より")
