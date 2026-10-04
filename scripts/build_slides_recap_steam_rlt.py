@@ -733,8 +733,8 @@ eq_block(s, 4.81, 4, "**実行時**: 札を「良い」に固定して行動を�
 key_box(s, "方策は「札あり」と「札なし」の両方を表現できるので、改善確率を明示的に推定しなくてよい", y=6.3)
 
 # ================ old 8
-s = new_slide("RECAP: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step9）。名称は私たちのパイプラインの番号。")
-steps = ["Step1\nreturn の計算", "Step2\n価値モデルの学習", "Step3\nadvantage の計算", "Step4\n条件付き SFT", "Step9\nシミュレータで評価"]
+s = new_slide("RECAP: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。名称は私たちのパイプラインの番号。")
+steps = ["Step1\nreturn の計算", "Step2\n価値モデルの学習", "Step3\nadvantage の計算", "Step4\n条件付き SFT", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
     box(s, x, 1.1, 2.2, 0.95, t.split("\n"), fill=BLUE if i < 4 else GREEN, line=None, size=14, color=WHITE, bold=True,
@@ -746,8 +746,8 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step2**: 価値モデル（SigLIP2 + Gemma3-270M）が、201 ビンの分布を予測。**成功した時点で打ち切る設定で再収集した 4,122 本**で学習（**4,000 step、20.6 時間**、RTX 6000 Ada 48GB）"),
     (1, "旧データでは、成功後も 520 ステップ続けていたため、価値が「フレーム番号と成否」でほぼ決まっていた"),
     (0, "**Step3**: A = r_{t:t+10} + V(o_{t+10}) − V(o_t)。上位 30% を positive（人のデモは全て positive）。閾値は全データセットを結合して 1 つに決める（**62.3 万サンプル、4.2 時間**）"),
-    (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価も positive プロンプトで行う（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
-    (0, "**状況**: Step4 は途中段階（2,000 step 前後。計画は 30,000 step）。step 2,000 の評価は 0.44〜0.50（環境数・乱数・プロンプトで変動）"),
+    (0, "**Step4**: プロンプトに \"Advantage: positive\" を付けて SFT（ドロップアウト 0.1）。評価では、札あり・札なしの両方を試した（**2,000 step、20.3 時間**、RTX 6000 Ada 48GB）"),
+    (0, "**Step5**: success_once は **0.50**（最良、プロンプトなし。ベース 0.40）。プロンプトありは 0.48。Step4 は途中段階（2,000 step 前後、計画は 30,000 step）で、評価は 0.44〜0.50 の範囲で変動"),
 ], size=17)
 key_box(s, "価値モデルの信号は、データの作り方（成功で打ち切るか）に強く依存した")
 
@@ -830,8 +830,8 @@ textbox(s, 0.6, 5.0, 12.1, 1.1, [
 key_box(s, "論文では、STEAM が RECAP（1 反復）を全タスクで上回る。タオル折りでは +36.7 pt")
 
 # ================ old 11
-s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step9）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
-steps = ["Step1\nフレームペアの作成", "Step2\ncritic の学習", "Step3\nadvantage の計算", "Step4\n方策の学習（SFT）", "Step9\nシミュレータで評価"]
+s = new_slide("STEAM: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。RECAP の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
+steps = ["Step1\nフレームペアの作成", "Step2\ncritic の学習", "Step3\nadvantage の計算", "Step4\n方策の学習（SFT）", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
     box(s, x, 1.1, 2.2, 0.95, t.split("\n"), fill=BLUE if i < 4 else GREEN, line=None, size=14, color=WHITE, bold=True,
@@ -844,7 +844,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (1, "学習データ上の accuracy は 0.277 → 0.353。未知のロールアウト（step 600）では 0.106 と低い"),
     (0, "**Step3**: ペアの予想から advantage を作る（アンサンブルのメンバーは 1 個）。ロールアウトの上位 30%、デモの上位 80% を positive（**1 データセット約 2.4 時間**、RTX A5000）"),
     (0, "**Step4**: 札付き SFT で 1,000 step、続けて positive のフレームだけで 450 step（プロンプトなし）（**合計 1,450 step、16.5 時間**、RTX A5000）"),
-    (0, "**Step9**: success_once は **0.52**（最良。ベース 0.40）。札付き SFT（プロンプトあり）は 0.42、両側タグは 0.36"),
+    (0, "**Step5**: success_once は **0.52**（最良。ベース 0.40）。札付き SFT（プロンプトあり）は 0.42、両側タグは 0.36"),
 ], size=16)
 key_box(s, "critic は学習データ上では改善したが、未知のロールアウトでの精度は低い（今後の課題）")
 
@@ -934,8 +934,8 @@ eq_block(s, 4.81, 4, "**actor**: Q が大きい行動を出す。ただし、VLA
 key_box(s, "actor は、VLA の提案 ã を条件に、ゼロからではなく、強い初期案を改善する", y=6.3)
 
 # ================ old 14
-s = new_slide("RL Token: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step9）。RECAP・STEAM の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
-steps = ["Step1\n特徴量の抽出", "Step2\nRL token の学習", "Step3\nactor-critic の学習", "Step4\n2 つ目専用の actor", "Step9\nシミュレータで評価"]
+s = new_slide("RL Token: smolVLA での実装（私たちの実験）", "Step1〜4 と評価（Step5）。RECAP・STEAM の実装スライドと同じ形式。Step 名は私たちのパイプラインの番号。")
+steps = ["Step1\n特徴量の抽出", "Step2\nRL token の学習", "Step3\nactor-critic の学習", "Step4\n2 つ目専用の actor", "Step5\nシミュレータで評価"]
 for i, t in enumerate(steps):
     x = 0.6 + i * 2.5
     box(s, x, 1.1, 2.2, 0.95, t.split("\n"), fill=BLUE if i < 4 else GREEN, line=None, size=14, color=WHITE, bold=True,
@@ -947,7 +947,7 @@ textbox(s, 0.6, 2.3, 12.1, 3.9, [
     (0, "**Step2**: 小さな encoder-decoder が、保存した特徴から RL token を作る（再構成損失で学習。**6,000 step、約 25 分**）。再構成の val MSE は 0.073（平均を出す基準は 0.269）"),
     (0, "**Step3**: 1・2 つ目の把持の actor-critic を、オンライン RL で学習（3 環境、更新/データ比 5、探索ノイズ σ = 0.05。**750 エポック、約 8.2 時間**、RTX A5000 24GB）。それ以外は VLA が実行"),
     (0, "**Step4**: 残る失敗は 2 つ目の把持が最大 → 2 つ目専用の actor を、空振り（何も挟まずに閉じる）への罰 −0.2 つきで学習（1 つ目は Step3 の actor を固定。**400 エポック、5.4 時間**、RTX A5000）"),
-    (0, "**Step9**: success_once は **0.68**（最良。VLA のみ 0.46、1 つ目だけ RL 0.62、2 局面 0.66）。2 つ目を VLA に任せると 0.60。actor の重みは約 5 MB"),
+    (0, "**Step5**: success_once は **0.68**（最良。VLA のみ 0.46、1 つ目だけ RL 0.62、2 局面 0.66）。2 つ目を VLA に任せると 0.60。actor の重みは約 5 MB"),
 ], size=16)
 key_box(s, "凍結した VLA の上の小さな actor-critic だけで、success_once が 0.46 → 0.68 に向上した")
 
