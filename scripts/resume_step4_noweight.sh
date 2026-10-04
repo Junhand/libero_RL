@@ -6,7 +6,7 @@
 # 実行: cd /workspace/libero_RL && nohup bash scripts/resume_step4_noweight.sh > /dev/null 2>&1 &
 cd /workspace/libero_RL
 ROOT=/workspace/libero_RL
-EV=tmp/step4_resume_events.log
+EV=tmp/step4_events_${EXP_NAME:-step4_recap_framewise_resume1000}.log   # 実験ごとのイベントログ（別の実験と混ざらない）
 D=$ROOT/data/smolvla_recap
 ADV_TAG=${ADV_TAG:-fail300_N10_q30}   # advantage のタグ（q10 など relabel したものに切り替える）
 ADV=meta/advantages_$ADV_TAG.parquet
@@ -51,7 +51,7 @@ for attempt in 1 2 3 4 5 6; do
   else
     R=$(latest_ckpt); [ -z "$R" ] && R=$BASE_CKPT
     log "attempt $attempt resume=$R"
-    run_step4 tmp/step4_resume_attempt$attempt.log "+runner.resume_dir=$(realpath $R)" &
+    run_step4 tmp/step4_${EXP_NAME}_attempt$attempt.log "+runner.resume_dir=$(realpath $R)" &
     P=$!
   fi
   while kill -0 $P 2>/dev/null; do prune; sleep 120; done
