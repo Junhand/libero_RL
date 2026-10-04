@@ -1071,7 +1071,7 @@ table(s, 0.6, 1.1, 12.1, [1.2, 2.4, 2.6, 4.2, 1.7], rows, size=14, row_h=1.3, he
 key_box(s, "RECAP と STEAM は評価者だけが違い、RL Token は行動を直す。目的は補完的")
 
 # ================ old 17
-s = new_slide("まとめと課題", "残された課題: Step4 の学習量、critic の精度、評価の統計的な信頼性、RL Token の適用範囲。")
+s = new_slide("まとめと課題", "残された課題: Step4 の学習量、critic の精度。")
 box(s, 0.6, 1.1, 5.9, 0.6, "まとめ", fill=BLUE, line=None, size=20, color=WHITE, bold=True, name="summary head")
 textbox(s, 0.6, 1.85, 5.9, 3.0, [
     (0, "RECAP と STEAM は評価者が違う（advantage 条件付き学習）。RL Token は、オンライン RL で行動を洗練する"),
@@ -1083,14 +1083,12 @@ box(s, 6.8, 1.1, 5.9, 0.6, "課題", fill=GREEN, line=None, size=20, color=WHITE
 textbox(s, 6.8, 1.85, 5.9, 3.0, [
     (0, "RECAP・STEAM の Step4 は途中段階（計画の 30,000 step に対し、2,000 step 前後）"),
     (0, "STEAM の critic は、未知のロールアウトでの精度が低く、アンサンブルも 1 個"),
-    (0, "評価が 50 エピソードで、標準誤差が大きい（±0.07）"),
-    (0, "RL Token は、Task 0 だけで検証。他のタスクは未検証"),
 ], size=16)
 strip = [("ベース", R["base"], LGRAY, BLACK), ("RECAP", R["recap"], SLATE, WHITE), ("STEAM", R["steam"], SLATE, WHITE), ("RL Token", R["rlt"], GREEN, WHITE)]
 for i, (n, v, col, tc) in enumerate(strip):
     box(s, 0.6 + i * 3.05, 4.85, 2.85, 1.2, [dict(text=f"{v/100:.2f}", size=32, bold=True, color=tc), dict(text=n, size=15, color=tc)],
         fill=col, line=None, size=15, name=f"result {n}")
-key_box(s, "最良は RL Token（0.74）。RECAP・STEAM は途中段階で、学習量と評価の信頼性が課題")
+key_box(s, "最良は RL Token（0.74）。RECAP・STEAM は途中段階で、学習量が課題")
 
 prs.save(OUT)
 print("saved", OUT, "slides:", len(prs.slides))
