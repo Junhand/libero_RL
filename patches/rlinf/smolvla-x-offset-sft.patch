@@ -1,0 +1,252 @@
+diff --git a/rlinf/workers/actor/fsdp_rlt_ac_policy_worker.py b/rlinf/workers/actor/fsdp_rlt_ac_policy_worker.py
+index 02c8852..4dbe783 100644
+--- a/rlinf/workers/actor/fsdp_rlt_ac_policy_worker.py
++++ b/rlinf/workers/actor/fsdp_rlt_ac_policy_worker.py
+@@ -18,6 +18,7 @@ import queue
+ import torch
+ import torch.nn.functional as F
+ 
++from rlinf.algorithms.rlt.offset_score import OffsetScorer
+ from rlinf.algorithms.rlt.transition import use_simulator_transition_replay
+ from rlinf.data.schema.embodied_types import Trajectory
+ from rlinf.models.embodiment.base_policy import ForwardType
+@@ -230,8 +231,22 @@ class RLTACLossMixin:
+             obs=next_obs,
+         )
+ 
++    def _offset_cfg(self):
++        return self.cfg.algorithm.get("rlt_offset", {})
++
++    def _offset_mode(self) -> str:
++        """"" (off), "reward" (offset replaces/adds to the reward) or "sft" (critic-free filtered SFT)."""
++        cfg = self._offset_cfg()
++        return str(cfg.get("mode", "")) if bool(cfg.get("enable", False)) else ""
++
+     @Worker.timer("forward_critic")
+     def forward_critic(self, batch):
++        if self._offset_mode() == "sft":
++            # Critic-free variant: the critic is not trained (zero loss, keeps the optimizer plumbing).
++            q = self.model(
++                forward_type=ForwardType.SAC_Q, obs=batch["curr_obs"], actions=batch["actions"]
++            )
++            return 0.0 * q.mean(), {"q_data": float(q.mean().item())}
+         use_crossq = self.cfg.algorithm.get("q_head_type", "default") == "crossq"
+         bootstrap_type = self.cfg.algorithm.get("bootstrap_type", "standard")
+ 
+@@ -316,6 +331,9 @@ class RLTACLossMixin:
+             log_pi = log_pi.unsqueeze(-1)
+         log_pi = log_pi.sum(dim=-1, keepdim=True)
+ 
++        if self._offset_mode() == "sft":
++            return self._forward_actor_offset_sft(batch, pi, log_pi, curr_obs, reference_dropout_prob)
++
+         if not use_crossq:
+             all_qf_pi = self.model(
+                 forward_type=ForwardType.SAC_Q,
+@@ -367,6 +385,41 @@ class RLTACLossMixin:
+ 
+         return actor_loss, entropy, metrics
+ 
++    def _forward_actor_offset_sft(self, batch, pi, log_pi, curr_obs, reference_dropout_prob):
++        """Critic-free actor loss: BC to the VLA reference + SFT on the executed chunks whose
++        temporal-offset score (stored in ``rewards`` at ingestion) is in the top fraction of the batch."""
++        cfg = self._offset_cfg()
++        chunk_len, action_dim = self._chunk_shape()
++        ref_chunk = self._ref_chunk(curr_obs)
++        bc_loss, metrics = self._bc_metrics(
++            pi=pi, actions=batch["actions"], ref_chunk=ref_chunk,
++            intervene_flags=batch.get("intervene_flags", None),
++        )
++        bc_weight, _, weight_metrics = self._actor_objective_weights()
++        metrics.update(weight_metrics)
++        in_warmup = bool(weight_metrics.get("actor_weight_in_warmup", 0.0))
++        sft_weight = 0.0 if in_warmup else float(cfg.get("sft_weight", 1.0))
++
++        pi_chunk = self._flatten_chunk(pi).reshape(-1, chunk_len, action_dim)
++        executed = self._flatten_chunk(batch["actions"]).reshape(-1, chunk_len, action_dim).to(pi_chunk.dtype)
++        score = batch["rewards"].reshape(pi_chunk.shape[0], -1).float().mean(dim=1)
++        thr = torch.quantile(score, 1.0 - float(cfg.get("top_fraction", 0.3)))
++        mask = (score >= thr).to(pi_chunk.dtype)
++        err = torch.mean(torch.square(pi_chunk - executed), dim=(1, 2))
++        sft_loss = torch.sum(err * mask) / torch.clamp(torch.sum(mask), min=1.0)
++        actor_loss = bc_weight * bc_loss + sft_weight * sft_loss
++        metrics.update({
++            "sft_loss": sft_loss.detach().item(),
++            "sft_weight": sft_weight,
++            "sft_score_mean": score.mean().item(),
++            "sft_score_thr": thr.item(),
++            "sft_positive_rate": mask.mean().item(),
++            "weighted_bc": (bc_weight * bc_loss).detach().item(),
++            "reference_dropout_prob": reference_dropout_prob,
++            "action_ref_abs_mean": (self._flatten_chunk(pi) - self._flatten_chunk(ref_chunk)).abs().mean().detach().item(),
++        })
++        return actor_loss, -log_pi.mean(), metrics
++
+     @Worker.timer("forward_alpha")
+     def forward_alpha(self, batch):
+         del batch
+@@ -516,7 +569,9 @@ class RLTACReplayMixin:
+                         last_recorded[env_idx] = t
+                         recorded[env_idx].add(t)
+ 
++        offset_seqs: list[list[int]] = []
+         for env_idx in range(bsz):
++            offset_seq: list[int] = []
+             for t in range(traj_len):
+                 idx = t * bsz + env_idx
+                 if idx >= num_rows:
+@@ -628,13 +683,67 @@ class RLTACReplayMixin:
+                     )
+ 
+                 replay_trajectories.append(transition)
++                offset_seq.append(len(replay_trajectories) - 1)
+                 if episode_done:
+                     completed_episodes += 1
++                    offset_seqs.append(offset_seq)
++                    offset_seq = []
+                     if not auto_reset:
+                         break
++            if offset_seq:
++                offset_seqs.append(offset_seq)
+ 
++        if self._offset_mode():
++            self._apply_offset_scores(replay_trajectories, offset_seqs)
+         return replay_trajectories, completed_episodes
+ 
++    def _apply_offset_scores(self, replay_trajectories: list[Trajectory], seqs: list[list[int]]) -> None:
++        """Replace/augment each transition's reward by the temporal-offset score of its RL tokens.
++
++        sft:    score_t = f(z_t, z_{t+s}) * L / s, s = min(L, steps left in the episode); the last transition
++                (no later observation is stored) takes the previous score. Stored in ``rewards`` (read by the SFT loss).
++        reward: r_t = reward_scale * f(z_t, z_{t+1}) / L_max (progress made by the chunk); the last transition
++                takes the previous value. ``reward_mode`` = "replace" or "add" (to the environment reward).
++        """
++        cfg = self._offset_cfg()
++        if getattr(self, "_offset_scorer", None) is None:
++            self._offset_scorer = OffsetScorer(str(cfg.ckpt), torch.device(self.device))
++        scorer = self._offset_scorer
++        mode = self._offset_mode()
++        look = int(cfg.get("lookahead", 3))
++        scale = float(cfg.get("reward_scale", 1.0))
++        add = str(cfg.get("reward_mode", "replace")) == "add"
++        for seq in seqs:
++            n = len(seq)
++            if n == 0:
++                continue
++            z = torch.cat([replay_trajectories[p].curr_obs["z_rl"].reshape(1, -1) for p in seq], dim=0)
++            values = [0.0] * n
++            if n > 1:
++                if mode == "sft":
++                    steps = [min(look, n - 1 - p) for p in range(n - 1)]
++                    a = z[: n - 1]
++                    b = torch.stack([z[p + steps[p]] for p in range(n - 1)])
++                    out = scorer(a, b)
++                    for p in range(n - 1):
++                        values[p] = float(out[p]) * look / steps[p]
++                else:
++                    out = scorer(z[:-1], z[1:])
++                    for p in range(n - 1):
++                        values[p] = scale * float(out[p]) / scorer.lmax
++                values[n - 1] = values[n - 2]
++            for p, v in zip(seq, values):
++                tr = replay_trajectories[p]
++                if mode == "sft":
++                    tr.rewards = torch.full_like(tr.rewards, v)
++                elif add:
++                    tr.rewards = tr.rewards.clone()
++                    tr.rewards[..., 0] += v
++                else:
++                    r = torch.zeros_like(tr.rewards)
++                    r[..., 0] = v
++                    tr.rewards = r
++
+     def _transition_replay_metrics(
+         self,
+         replay_trajectories: list[Trajectory],
+diff --git a/examples/embodiment/config/libero_10_smolvla_rlt_stage2.yaml b/examples/embodiment/config/libero_10_smolvla_rlt_stage2.yaml
+index d2b29a2..58b2a65 100644
+--- a/examples/embodiment/config/libero_10_smolvla_rlt_stage2.yaml
++++ b/examples/embodiment/config/libero_10_smolvla_rlt_stage2.yaml
+@@ -88,6 +88,18 @@ algorithm:
+   q_weight: 1.0
+   bc_weight: 1.0
+   reference_dropout_prob: 0.5
++  # Temporal-offset score on RL tokens (STEAM-style progress signal; see rlinf/algorithms/rlt/offset_score.py).
++  #   mode: sft    -> critic-free: SFT of the actor on the executed chunks with the top `top_fraction` scores
++  #   mode: reward -> the offset (progress of the chunk) replaces ("replace") or is added to ("add") the reward
++  rlt_offset:
++    enable: False
++    mode: sft
++    ckpt: null
++    lookahead: 3
++    top_fraction: 0.3
++    sft_weight: 1.0
++    reward_scale: 1.0
++    reward_mode: replace
+   actor_weight_schedule:
+     enable: True
+     warmup_updates: 20000
+diff --git a/rlinf/algorithms/rlt/offset_score.py b/rlinf/algorithms/rlt/offset_score.py
+new file mode 100644
+index 0000000..4a129ff
+--- /dev/null
++++ b/rlinf/algorithms/rlt/offset_score.py
+@@ -0,0 +1,58 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Temporal-offset score on RL tokens (STEAM-style progress signal without a VLM critic).
++
++A small MLP maps two RL tokens ``(z_a, z_b)`` of the same episode to the signed temporal offset between
++them, normalised by the episode length (``frames * L_max / T``). It replaces the hand-made grasp reward
++(or the vision-language critic of STEAM) as the quality signal of a transition.
++"""
++
++import torch
++import torch.nn as nn
++
++
++class OffsetMLP(nn.Module):
++    def __init__(self, dim: int = 960, hidden: int = 512):
++        super().__init__()
++        self.f = nn.Sequential(
++            nn.Linear(dim * 3, hidden),
++            nn.GELU(),
++            nn.Linear(hidden, hidden),
++            nn.GELU(),
++            nn.Linear(hidden, 1),
++        )
++
++    def forward(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
++        return self.f(torch.cat([a, b, b - a], dim=-1)).squeeze(-1)
++
++
++class OffsetScorer:
++    """Loads ``{"net", "mu", "sd", "Lmax"}`` and scores RL-token pairs."""
++
++    def __init__(self, ckpt_path: str, device: torch.device):
++        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
++        self.net = OffsetMLP()
++        self.net.load_state_dict(ckpt["net"])
++        self.net.eval().to(device).requires_grad_(False)
++        self.mu = torch.as_tensor(ckpt["mu"], dtype=torch.float32, device=device)
++        self.sd = torch.as_tensor(ckpt["sd"], dtype=torch.float32, device=device)
++        self.lmax = float(ckpt["Lmax"])
++        self.device = device
++
++    @torch.no_grad()
++    def __call__(self, z_a: torch.Tensor, z_b: torch.Tensor) -> torch.Tensor:
++        a = (z_a.to(self.device).float() - self.mu) / self.sd
++        b = (z_b.to(self.device).float() - self.mu) / self.sd
++        return self.net(a, b).cpu()
