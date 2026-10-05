@@ -66,3 +66,22 @@ description: STEAM（時間オフセットによる advantage）と RL Token（�
   - 同じ初期状態のエピソードが、学習と評価に分かれている可能性がある（エピソード単位の分割のみ）。数値は楽観的かもしれない。
   - STEAM のラベル表（`tmp/steam/step4/adv_train_merged_n32e2000_endfixD_q30.parquet`）は、マージ済みデータの**先頭 1,458 エピソード**（各 T − 8 フレーム）のみ。マージ済みデータの `episodes.jsonl` の `is_success` は、結果と一致しない（先頭 1,458 件が True）ため、成功の判定には、フレームの `is_success` 列を使うこと。
 - 次: E0b（空振り局面の区別: 把持確認のゲートの前後で、スコアが落ちるか）、E1（A と B の比較）。
+
+### E0b（2026-10-05）: 空振りの局面を見分けられるか — 結果: 見分けられる（中程度）
+- 把持の指令（閉じる）があるフレームを、空振り（隙間 ≤ 0.03）と保持（隙間 0.04〜0.071）に分け、前向き 30 フレームの時間オフセットのスコアを比較（未使用エピソード + eval、62,599 フレーム）。
+- 平均スコア: 空振り 6.62、保持 33.26、開いている 19.98。AUROC（保持 vs 空振り）0.832。
+- 成功エピソード内だけ 0.853、失敗エピソード内だけ 0.654（失敗エピソードでは、保持と空振りの差が小さい）。
+- 注意: 空振りの前後は「進んでいない」ので、スコアが低いのは自然。把持の確認ゲートの定義（8 ステップ連続）とは、厳密には一致しない（格子の 1 フレームで判定）。懸念 (c) は、「全く見分けられない」ではなかったが、失敗エピソード内では、弱い。
+- 結果ファイル: `tmp/hybrid/e0b_result.txt`、フレーム表 `tmp/hybrid/e0b_frames.parquet`。
+
+### E1 の実装（2026-10-05）
+- パッチ `patches/rlinf/smolvla-x-offset-sft.patch`（コミット 5cee4e6）。クリーンな RLinf に、他のパッチと順に当てて、開発用コピー（`tmp/rlinf_dev`）と同一になることを確認した。
+  - `rlinf/algorithms/rlt/offset_score.py`: MLP（E0 の `tmp/hybrid/offset_mlp.pt`）で RL token の対のオフセットを計算。
+  - `fsdp_rlt_ac_policy_worker.py`: `algorithm.rlt_offset.{enable, mode, ckpt, lookahead, top_fraction, sft_weight, reward_scale, reward_mode}`。
+    - `mode=sft`（案 A）: 取り込み時に、各チャンクのスコア = f(z_t, z_{t+3}) を `rewards` に保存。actor の損失 = bc_weight × BC(参照) + sft_weight × （バッチのスコア上位 30% の実行チャンクへの MSE）。critic は学習しない（損失 0）。ウォームアップ中は SFT の重み 0（参照への BC のみ）。
+    - `mode=reward`（案 B）: 報酬 = reward_scale × f(z_t, z_{t+1}) / L_max で置換（`reward_mode=add` なら、環境の報酬に加算）。最後の遷移は、1 つ前の値を使う。
+  - 実行: `tmp/rlt_stage2/run_e1.sh`（`run_stage1_long.sh` の複製。tensorboard のみ、wandb へは送らない）、`run_e1_chain.sh`（A → B）。
+- スモークテスト（A、B とも、数エポック）は、エラーなく完走。
+- 条件: 1 つ目の把持のサブタスク（`grasp_subtask`、最大 200 ステップ）、500 エポック、UTD 5、`fixed_std` 0.02、3 環境。評価は D と同じ方式（シード 930000、50 エピソード）。比較: ベース（RLT 経路）0.46、D（把持の報酬 +1）0.62。
+- A の設定: `online_bc_weight=1.0`、`sft_weight=1.0`、上位 30%、先読み 3 チャンク（30 ステップ）。B の設定: `reward_scale=2.5`。
+- 環境の把持ゲート（局面の判定）と終了条件は、A・B とも、そのまま残っている（変えたのは、報酬と学習則だけ）。
