@@ -1,0 +1,272 @@
+--- a/examples/embodiment/config/libero_10_smolvla_rlt_stage2.yaml	2026-10-05 16:23:23.000000000 +0000
++++ b/examples/embodiment/config/libero_10_smolvla_rlt_stage2.yaml	2026-10-06 14:57:18.000000000 +0000
+@@ -59,6 +59,8 @@
+ 
+ algorithm:
+   update_epoch: 5
++  dsrl:
++    enable: False # True: SAC in the initial-noise space of the frozen VLA (model_type dsrl_mlp_policy)
+   rlt_schedule:
+     enable: True
+     max_updates_per_train_step: 400
+@@ -267,6 +269,8 @@
+     add_q_head: True
+     q_head_type: "default"
+     fixed_std: 0.02
++    dsrl_mean_max: 1.5 # dsrl_mlp_policy: |mean shift of the initial noise|
++    dsrl_noise_clip: 3.0
+     is_lora: False
+     lora_rank: 32
+ 
+--- a/evaluations/libero/libero_10_smolvla_rlt_eval.yaml	2026-10-06 05:49:24.000000000 +0000
++++ b/evaluations/libero/libero_10_smolvla_rlt_eval.yaml	2026-10-06 14:57:18.000000000 +0000
+@@ -97,6 +97,8 @@
+     add_q_head: True
+     q_head_type: "default"
+     fixed_std: 0.02
++    dsrl_mean_max: 1.5 # dsrl_mlp_policy: |mean shift of the initial noise|
++    dsrl_noise_clip: 3.0
+     is_lora: False
+ 
+   # Frozen actor (full_weights.pt) for the phases before env.*.rlt_policy_switch.actor_phase; needs pre_actor: True.
+--- a/rlinf/config.py	2026-09-28 03:08:23.000000000 +0000
++++ b/rlinf/config.py	2026-10-06 14:57:05.000000000 +0000
+@@ -94,6 +94,7 @@
+ SupportedModel.STARVLA = SupportedModel.register("starvla", force=True)
+ SupportedModel.MLP_POLICY = SupportedModel.register("mlp_policy", force=True)
+ SupportedModel.RLT_MLP_POLICY = SupportedModel.register("rlt_mlp_policy", force=True)
++SupportedModel.DSRL_MLP_POLICY = SupportedModel.register("dsrl_mlp_policy", force=True)
+ SupportedModel.RLT_TD3_MLP_POLICY = SupportedModel.register(
+     "rlt_td3_mlp_policy", force=True
+ )
+@@ -142,6 +143,7 @@
+         SupportedModel.STARVLA,
+         SupportedModel.MLP_POLICY,
+         SupportedModel.RLT_MLP_POLICY,
++        SupportedModel.DSRL_MLP_POLICY,
+         SupportedModel.RLT_TD3_MLP_POLICY,
+         SupportedModel.GR00T,
+         SupportedModel.DEXBOTIC_PI,
+--- a/rlinf/models/__init__.py	2026-09-28 03:08:23.000000000 +0000
++++ b/rlinf/models/__init__.py	2026-10-06 14:57:05.000000000 +0000
+@@ -99,6 +99,11 @@
+ 
+         return get_model(cfg, torch_dtype)
+ 
++    def _build_dsrl_mlp_policy(cfg: DictConfig, torch_dtype):
++        from rlinf.models.embodiment.mlp_policy import get_model
++
++        return get_model(cfg, torch_dtype)
++
+     def _build_rlt_mlp_policy(cfg: DictConfig, torch_dtype):
+         from rlinf.models.embodiment.mlp_policy import get_model
+ 
+@@ -248,6 +253,12 @@
+         category="embodied",
+         force=True,
+     )
++    register_model(
++        SupportedModel.DSRL_MLP_POLICY.value,
++        _build_dsrl_mlp_policy,
++        category="embodied",
++        force=True,
++    )
+     register_model(
+         SupportedModel.RLT_MLP_POLICY.value,
+         _build_rlt_mlp_policy,
+--- a/rlinf/models/embodiment/mlp_policy/__init__.py	2026-09-27 01:11:54.000000000 +0000
++++ b/rlinf/models/embodiment/mlp_policy/__init__.py	2026-10-06 14:57:05.000000000 +0000
+@@ -23,7 +23,21 @@
+     from rlinf.models.embodiment.mlp_policy.rlt_td3_mlp_policy import RLTTD3MLPPolicy
+ 
+     iql_config = cfg.get("iql_config", None)
+-    if cfg.model_type == "rlt_mlp_policy":
++    if cfg.model_type == "dsrl_mlp_policy":
++        from rlinf.models.embodiment.mlp_policy.dsrl_mlp_policy import DSRLMLPPolicy
++
++        model = DSRLMLPPolicy(
++            z_dim=cfg.z_dim,
++            proprio_dim=cfg.proprio_dim,
++            action_dim=cfg.action_dim,
++            num_action_chunks=cfg.num_action_chunks,
++            add_q_head=cfg.get("add_q_head", True),
++            q_head_type=cfg.get("q_head_type", "default"),
++            fixed_std=cfg.get("fixed_std", 1.0),
++            mean_max=cfg.get("dsrl_mean_max", 1.5),
++            noise_clip=cfg.get("dsrl_noise_clip", 3.0),
++        )
++    elif cfg.model_type == "rlt_mlp_policy":
+         model = RLTMLPPolicy(
+             z_dim=cfg.z_dim,
+             proprio_dim=cfg.proprio_dim,
+--- a/rlinf/models/embodiment/mlp_policy/dsrl_mlp_policy.py	1970-01-01 00:00:00.000000000 +0000
++++ b/rlinf/models/embodiment/mlp_policy/dsrl_mlp_policy.py	2026-10-06 14:57:05.000000000 +0000
+@@ -0,0 +1,93 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++import torch
++
++from rlinf.models.embodiment.mlp_policy.mlp_policy import MLPPolicy
++from rlinf.models.embodiment.mlp_policy.rlt_mlp_policy import RLTMLPPolicy
++
++
++class DSRLMLPPolicy(RLTMLPPolicy):
++    """DSRL (diffusion steering) head on the RL token: SAC in the initial-noise space of a frozen flow-matching VLA.
++
++    The actor maps (z_rl, proprio) to the initial noise of the first ``num_action_chunks`` action steps
++    (``action_dim`` = the VLA's noise dimension per step, 32 for SmolVLA); the rollout decodes it with the frozen
++    VLA (``feature_model.decode_with_noise``). The noise distribution is N(mu(s), fixed_std^2) with
++    mu = mean_max * tanh(.), so an untrained actor reproduces the VLA's own N(0, I) sampling. The critic scores
++    (z_rl, proprio, noise). The replay stores the noise as the action.
++    """
++
++    is_dsrl = True
++
++    def __init__(
++        self,
++        z_dim: int,
++        proprio_dim: int,
++        action_dim: int,
++        num_action_chunks: int,
++        add_q_head: bool = True,
++        q_head_type: str = "default",
++        fixed_std: float = 1.0,
++        mean_max: float = 1.5,
++        noise_clip: float = 3.0,
++    ):
++        if not add_q_head:
++            raise ValueError("DSRLMLPPolicy requires add_q_head=True.")
++        self.z_dim = int(z_dim)
++        self.proprio_dim = int(proprio_dim)
++        self.step_action_dim = int(action_dim)  # noise dimension per action step
++        self.chunk_len = int(num_action_chunks)
++        self.ref_chunk_len = self.chunk_len
++        self.flat_action_dim = self.chunk_len * self.step_action_dim
++        MLPPolicy.__init__(
++            self,
++            obs_dim=self.z_dim + self.proprio_dim,
++            action_dim=self.flat_action_dim,
++            num_action_chunks=1,
++            add_value_head=False,
++            add_q_head=add_q_head,
++            q_head_type=q_head_type,
++            critic_obs_dim=self.z_dim + self.proprio_dim,
++        )
++        self.fixed_std = float(fixed_std)
++        self.mean_max = float(mean_max)
++        self.noise_clip = float(noise_clip)
++
++    def _actor_state(self, obs: dict, **kwargs) -> torch.Tensor:
++        return torch.cat([self._get_z(obs), self._get_proprio(obs)], dim=-1)
++
++    def noise_mean(self, obs: dict) -> torch.Tensor:
++        return self.mean_max * torch.tanh(self.actor_mean(self.backbone(self._actor_state(obs))))
++
++    def sac_forward(self, obs, deterministic: bool = False, **kwargs):
++        mean = self.noise_mean(obs)
++        noise = mean if deterministic else mean + self.fixed_std * torch.randn_like(mean)
++        noise = noise.clamp(-self.noise_clip, self.noise_clip)
++        return noise, torch.zeros_like(noise), None
++
++    @torch.inference_mode()
++    def predict_action_batch(self, env_obs, calculate_logprobs=True, calculate_values=True, return_obs=True, mode="train", **kwargs):
++        del calculate_logprobs, calculate_values, mode
++        obs = self.preprocess_env_obs(env_obs=env_obs)
++        # sampled in evaluation too: the VLA was trained on N(0, I) noise, a noise-free input is out of distribution
++        noise, logprobs, _ = self.sac_forward(obs, deterministic=False)
++        forward_inputs = {"action": noise, "model_action": noise}
++        if return_obs:
++            forward_inputs.update(obs)
++        result = {
++            "prev_logprobs": logprobs,
++            "prev_values": torch.zeros_like(logprobs[..., :1]),
++            "forward_inputs": forward_inputs,
++        }
++        return self._format_chunk_actions(noise), result
+--- a/rlinf/models/embodiment/smolvla/smolvla_rlt_model.py	2026-10-02 13:40:33.000000000 +0000
++++ b/rlinf/models/embodiment/smolvla/smolvla_rlt_model.py	2026-10-06 14:57:18.000000000 +0000
+@@ -102,6 +102,7 @@
+         if self.prompt_suffix:
+             batch["task"] = [task + self.prompt_suffix for task in batch["task"]]
+         batch = self._prepare_lerobot_batch(batch)
++        self._last_batch = batch  # reused by decode_with_noise right after (DSRL)
+ 
+         hidden = self._prefix_hidden(batch) / self.rlt_scale
+         rlt_param = next(self.rlt_module.parameters())
+@@ -118,3 +119,24 @@
+ 
+         proprio = env_obs["states"].to(device=z_rl.device, dtype=torch.float32)
+         return {"z_rl": z_rl, "proprio": proprio, "ref_chunk": ref_chunk}
++
++    @torch.no_grad()
++    def decode_with_noise(self, noise: torch.Tensor) -> torch.Tensor:
++        """Decode steered initial noise into env actions (DSRL).
++
++        ``noise`` is ``[B, C, D]`` (the first C steps of the flow-matching noise, D = the VLA's noise dim); the
++        remaining steps of the chunk get fresh N(0, I) noise. Must follow ``extract_rlt_obs`` of the same
++        observation (it reuses the prepared batch). Returns ``[B, ref_num_action_chunks, action_dim]``.
++        """
++        batch = self._last_batch
++        cfg = self.policy.config
++        device = next(self.policy.parameters()).device
++        bsz = noise.shape[0]
++        full = torch.randn(bsz, cfg.chunk_size, cfg.max_action_dim, device=device)
++        c = min(noise.shape[1], cfg.chunk_size)
++        full[:, :c, : noise.shape[2]] = noise[:, :c].to(device=device, dtype=full.dtype)
++        actions = self.policy.predict_action_chunk(batch, noise=full)
++        actions = actions[:, : self.ref_num_action_chunks, : self.action_dim].float().cpu()
++        if self.postprocessor is not None:
++            actions = self.postprocessor(actions)
++        return actions.to(device=noise.device, dtype=torch.float32)
+--- a/rlinf/algorithms/rlt/rollout.py	2026-10-03 18:08:58.000000000 +0000
++++ b/rlinf/algorithms/rlt/rollout.py	2026-10-06 14:57:18.000000000 +0000
+@@ -63,6 +63,11 @@
+         )
+         if isinstance(actions, np.ndarray):
+             actions = torch.from_numpy(actions)
++        dsrl_noise = None
++        if getattr(policy_model, "is_dsrl", False):
++            # DSRL: the policy output is the steered initial noise; the frozen VLA decodes it into env actions.
++            dsrl_noise = result["forward_inputs"]["action"]
++            actions = feature_model.decode_with_noise(actions)
+ 
+         route_output = rlt_route.route(
+             RLTRouteContext(
+@@ -79,6 +84,8 @@
+         )
+         actions = route_output.actions
+         result = route_output.result
++        if dsrl_noise is not None:
++            result["forward_inputs"]["action"] = dsrl_noise  # the replay keeps the noise (the SAC action), not the decoded actions
+         if pre_flags is not None and pre_policy_model is not None and pre_flags.any():
+             pre_actions, _ = pre_policy_model.predict_action_batch(
+                 env_obs=rlt_obs, mode="eval", return_obs=False
+--- a/rlinf/workers/actor/fsdp_rlt_ac_policy_worker.py	2026-10-05 16:23:07.000000000 +0000
++++ b/rlinf/workers/actor/fsdp_rlt_ac_policy_worker.py	2026-10-06 14:57:18.000000000 +0000
+@@ -62,8 +62,14 @@
+             return int(self.version)
+         return int(self.update_step)
+ 
++    def _dsrl_enabled(self) -> bool:
++        return bool(self.cfg.algorithm.get("dsrl", {}).get("enable", False))
++
+     def _ref_chunk(self, obs: dict[str, torch.Tensor]) -> torch.Tensor:
+         chunk_len, action_dim = self._chunk_shape()
++        if self._dsrl_enabled():
++            # DSRL: the actor acts in noise space; the "reference" of the BC term is the prior mean (zero noise shift).
++            return torch.zeros(obs["z_rl"].shape[0], chunk_len * action_dim, device=obs["z_rl"].device, dtype=obs["z_rl"].dtype)
+         ref_chunk = self._flatten_chunk(obs["ref_chunk"]).reshape(
+             obs["ref_chunk"].shape[0], -1, action_dim
+         )
