@@ -211,3 +211,12 @@ description: STEAM（時間オフセットによる advantage）と RL Token（�
 - 設定: 500 エポック、UTD 5、最初から、元の報酬（把持の +1）のみ（オフセットなし）。評価ログ: `tmp/rlt_stage2/d5ctl_eval_seed930000.log`。success_once **0.56**、success_at_end 0.54。
 - 比較: e2a（scale 0.5）0.60（対照との差 +0.04）、e2b（2.5）0.52（−0.04）、D（二段階）0.62。→ **対照との差は、いずれも標準誤差（約 0.07）の範囲内。オフセットの加算に、有意な効果は見られない。** 差の符号は、scale で逆（小さいと +、大きいと −）。D と対照の差（0.06）も、学習スケジュール・シードのばらつきの範囲。
 - 試行ごと（ベースが失敗する 27 試行 / 成功する 23 試行での成功率、改善 / 悪化の件数）: d5ctl 0.52 / 0.61（14 / 9）、D 0.52 / 0.74（14 / 6）、e2a 0.48 / 0.74（13 / 6）、e2b 0.44 / 0.61（12 / 9）。
+
+### STEAM の critic の学習の高速化: LoRA と凍結の速度（2026-10-06、A5000、バッチ 64、30 step の中央値）
+- 実装: パッチ `patches/rlinf/smolvla-z-steam-lora.patch`（`SteamConfig` の `lora_enable`、`lora_r`、`lora_alpha`、`lora_dropout`、`lora_apply_to`（`vision+language`）。peft の `inject_adapter_in_model` でアダプタを in place に注入。クリーンに適用できることを `git apply --check` で確認）。スクリプト: `scripts/steam_lora/`（`run_variant.sh`、`speed_cap.sh`、`test_steam_lora.py`）。Hydra では、`+actor.model.lora_enable=true` などと、`+` を付けて渡す。
+- 学習するパラメータ数: 全体 1,148M、視覚を凍結 270M、両方を凍結 1.7M、LoRA（rank 16、視覚 + 言語）14.4M（1.24%）。
+- 1 step / **30,000 step の所要時間**: 全体を学習 14.82 秒 / 123.5 時間（5.1 日）、**LoRA 19.87 秒 / 165.6 時間（6.9 日）**、視覚を凍結 5.21 秒 / 43.4 時間（1.8 日）、両方を凍結 4.14 秒 / 34.5 時間（1.4 日）。ピーク GPU メモリ: 全体 22.5 GB、視覚を凍結 17.9 GB、両方を凍結 5.3 GB、LoRA は未測定。
+- **LoRA は、全体の学習より約 34% 遅かった**（この設定: ランク 16、視覚と言語の全注意・MLP 層、A5000）。アダプタの追加の行列演算と、活性の逆伝播が残るため。速度の改善には、LoRA ではなく、**視覚エンコーダの凍結が効く**（約 2.8 倍）。
+- 凍結の下限は、約 4.1 秒 / step（前向き計算とデータ読み込み）。
+- 注意: 30 step の測定。保存（チェックポイント）は、FSDP の assertion エラー（`logit_scale` が state_dict にない）が出る場合がある（両方を凍結、全体で確認）。精度（時間オフセットの予測）への影響は、未評価。
+- **ディスクの quota 超過（2026-10-06 15:30 ごろ）:** 速度テストが、最終 step にチェックポイント（5.4 GB など）を保存し、quota を超えた。`Disk quota exceeded` で、ログが空になり、Ray の起動と git が失敗した。次回からは、`speed_cap.sh`（32 step で、PID を指定して止める）を使う。
