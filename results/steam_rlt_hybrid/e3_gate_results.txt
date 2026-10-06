@@ -1,0 +1,11 @@
+E3 (2026-10-06): D's actor (rlt-s1cont-utd5, 500 epochs) with a kNN confidence gate. 50 episodes, eval seed 930000, success_once.
+gate: the actor acts only where the RL token's k=20 NN distance (standardized, reference = success frames of r1_m0..r3_m2, 58,683 frames) <= threshold; else the VLA reference chunk.
+thresholds = percentiles of the offline distance of success frames at t<=150 (knn_thresholds.json).
+  no gate (threshold = inf)  : 0.62   (reproduces D)
+  threshold 24.291 (p99)     : 0.52
+  threshold 14.367 (p95)     : 0.42
+  threshold  9.938 (p90)     : 0.42
+  never use the actor        : 0.46   (reproduces the VLA alone through the RLT path)
+Share of actor-phase chunks blocked: p99 0.75, p95 0.87, p90 0.92 (chunk-weighted; long stuck episodes dominate).
+Live distance of the first actor chunk (t~10): p90 ~27 in both gall and gnone (offline success p90 3.4, offline failure median 23).
+Runs whose first chunk exceeds 24.3: 44% (actor) / 45% (VLA alone). Runs exceeding 14.4: 73% / 55%. (see e3_gate_log_analysis.py)
