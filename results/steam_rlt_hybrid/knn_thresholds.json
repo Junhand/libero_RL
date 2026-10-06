@@ -1,0 +1,29 @@
+{
+ "phase_frames_ID": 13390,
+ "phase_frames_OOD": 19526,
+ "p50": {
+  "threshold": 4.108,
+  "id_kept": 0.5,
+  "ood_kept": 0.092
+ },
+ "p80": {
+  "threshold": 7.175,
+  "id_kept": 0.8,
+  "ood_kept": 0.153
+ },
+ "p90": {
+  "threshold": 9.938,
+  "id_kept": 0.9,
+  "ood_kept": 0.197
+ },
+ "p95": {
+  "threshold": 14.367,
+  "id_kept": 0.95,
+  "ood_kept": 0.275
+ },
+ "p99": {
+  "threshold": 24.291,
+  "id_kept": 0.99,
+  "ood_kept": 0.478
+ }
+}

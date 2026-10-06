@@ -1,0 +1,166 @@
+diff --git a/rlinf/algorithms/rlt/route.py b/rlinf/algorithms/rlt/route.py
+index 160e832..52e57e0 100644
+--- a/rlinf/algorithms/rlt/route.py
++++ b/rlinf/algorithms/rlt/route.py
+@@ -116,6 +116,10 @@ class RLTRoute(ABC):
+ class RealworldRLTRoute(RLTRoute):
+     """Actor/ref routing for realworld RLT (keyboard or env switch flags)."""
+ 
++    def __init__(self, *, confidence_gate: Any | None = None):
++        # Optional: the actor acts only where the RL token is close to known-good states (see confidence_gate.py).
++        self.confidence_gate = confidence_gate
++
+     def route(self, ctx: RLTRouteContext) -> RLTRouteOutput:
+         actions = ctx.student_actions
+         result = ctx.result
+@@ -124,6 +128,9 @@ class RealworldRLTRoute(RLTRoute):
+             ctx.rlt_switch_flags,
+             default=ctx.default_actor_switch,
+         )
++        if self.confidence_gate is not None:
++            confident = self.confidence_gate(ctx.rlt_obs["z_rl"], active=rlt_switch_flags[:, 0, 0])
++            rlt_switch_flags = rlt_switch_flags & confident[:, None, None].to(rlt_switch_flags.device)
+         ref_actions = result["forward_inputs"]["ref_chunk"].to(
+             device=actions.device, dtype=actions.dtype
+         )
+@@ -147,9 +154,11 @@ class RealworldRLTRoute(RLTRoute):
+ class SimulatorRLTRoute(RLTRoute):
+     """Actor/ref/expert routing for ManiSkill RLT with schedule warmup."""
+ 
+-    def __init__(self, *, use_schedule: bool, warmup_updates: int):
++    def __init__(self, *, use_schedule: bool, warmup_updates: int, confidence_gate: Any | None = None):
+         self.use_schedule = use_schedule
+         self.warmup_updates = warmup_updates
++        # Optional: the actor acts only where the RL token is close to known-good states (see confidence_gate.py).
++        self.confidence_gate = confidence_gate
+ 
+     def _ready_for_online(self, version: int) -> bool:
+         return not self.use_schedule or int(version) >= self.warmup_updates
+@@ -175,6 +184,9 @@ class SimulatorRLTRoute(RLTRoute):
+                 device=actions.device,
+             )
+ 
++        if self.confidence_gate is not None:
++            actor_switch = actor_switch & self.confidence_gate(ctx.rlt_obs["z_rl"], active=actor_switch)
++
+         requested_expert_takeover = _last_info_bool(
+             ctx.intervene_requested,
+             batch_size=batch_size,
+@@ -244,11 +256,27 @@ class SimulatorRLTRoute(RLTRoute):
+         return RLTRouteOutput(actions=routed_actions, result=result)
+ 
+ 
++def _build_confidence_gate(cfg: Any) -> Any | None:
++    gate_cfg = (cfg.get("rollout", {}) or {}).get("rlt_gate", None)
++    if gate_cfg is None or not bool(gate_cfg.get("enable", False)):
++        return None
++    from rlinf.algorithms.rlt.confidence_gate import KNNConfidenceGate
++
++    return KNNConfidenceGate(
++        str(gate_cfg.ref_path),
++        k=int(gate_cfg.get("k", 20)),
++        threshold=float(gate_cfg.threshold),
++        log_path=gate_cfg.get("log_path", None),
++    )
++
++
+ def build_rlt_route(cfg: Any) -> RLTRoute:
++    gate = _build_confidence_gate(cfg)
+     if use_simulator_transition_replay(cfg):
+         schedule_cfg = cfg.algorithm.get("rlt_schedule", {}) or {}
+         return SimulatorRLTRoute(
+             use_schedule=bool(schedule_cfg.get("enable", False)),
+             warmup_updates=int(schedule_cfg.get("warmup_post_collect_updates", 0)),
++            confidence_gate=gate,
+         )
+-    return RealworldRLTRoute()
++    return RealworldRLTRoute(confidence_gate=gate)
+diff --git a/evaluations/libero/libero_10_smolvla_rlt_eval.yaml b/evaluations/libero/libero_10_smolvla_rlt_eval.yaml
+index ced0926..43e5459 100644
+--- a/evaluations/libero/libero_10_smolvla_rlt_eval.yaml
++++ b/evaluations/libero/libero_10_smolvla_rlt_eval.yaml
+@@ -103,6 +103,13 @@ rollout:
+   rlt_pre_actor:
+     ckpt_path: null
+ 
++  # kNN confidence gate: the actor acts only where the RL token is close to the reference set (else: VLA chunk).
++  rlt_gate:
++    enable: False
++    ref_path: null
++    k: 20
++    threshold: null
++    log_path: null
+   rlt_feature_model:
+     model_type: "smolvla"
+     model_path: "/path/to/smolvla_libero"
+diff --git a/rlinf/algorithms/rlt/confidence_gate.py b/rlinf/algorithms/rlt/confidence_gate.py
+new file mode 100644
+index 0000000..d037dde
+--- /dev/null
++++ b/rlinf/algorithms/rlt/confidence_gate.py
+@@ -0,0 +1,65 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Confidence gate for the RLT actor: use the actor only where the RL token is close to known-good states.
++
++The reference set is a matrix of standardized RL tokens (``{"z", "mu", "sd"}`` in a ``.pt`` file). The confidence of a
++chunk is the distance of its RL token to the k-th nearest reference token (smaller = more familiar). Where the
++distance exceeds ``threshold`` the route falls back to the VLA reference chunk.
++"""
++
++import json
++import os
++
++import torch
++
++
++class KNNConfidenceGate:
++    def __init__(self, ref_path: str, k: int, threshold: float, log_path: str | None = None):
++        ref = torch.load(ref_path, map_location="cpu", weights_only=False)
++        self.z = torch.as_tensor(ref["z"], dtype=torch.float32)
++        self.mu = torch.as_tensor(ref["mu"], dtype=torch.float32)
++        self.sd = torch.as_tensor(ref["sd"], dtype=torch.float32)
++        self.k = int(k)
++        self.threshold = float(threshold)
++        self.log_path = log_path
++        self._device = None
++
++    def _to(self, device: torch.device) -> None:
++        if self._device != device:
++            self.z, self.mu, self.sd = self.z.to(device), self.mu.to(device), self.sd.to(device)
++            self._device = device
++
++    @torch.no_grad()
++    def distance(self, z_rl: torch.Tensor) -> torch.Tensor:
++        self._to(z_rl.device)
++        q = (z_rl.float().reshape(z_rl.shape[0], -1) - self.mu) / self.sd
++        d = torch.cdist(q, self.z)
++        return d.topk(self.k, dim=1, largest=False).values[:, -1]
++
++    @torch.no_grad()
++    def __call__(self, z_rl: torch.Tensor, active: torch.Tensor | None = None) -> torch.Tensor:
++        """Bool [B]: True where the actor may act. ``active`` (bool [B]) only marks which rows are logged."""
++        dist = self.distance(z_rl)
++        confident = dist <= self.threshold
++        if self.log_path:
++            rows = {
++                "dist": [round(float(x), 4) for x in dist.cpu()],
++                "confident": [bool(x) for x in confident.cpu()],
++                "active": None if active is None else [bool(x) for x in active.cpu()],
++            }
++            os.makedirs(os.path.dirname(self.log_path) or ".", exist_ok=True)
++            with open(self.log_path, "a") as f:
++                f.write(json.dumps(rows) + "\n")
++        return confident
