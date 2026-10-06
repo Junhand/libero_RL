@@ -1,0 +1,20 @@
+C1 diagnostics
+
+== (1) Mahalanobis in the top-p PCA space (fit = success frames of r1-r3; test = r4 + eval)
+p     var_expl  mean d^2 on FIT frames (in-sample; ~p expected)  ID(test success) mean d^2   OOD(test failure) mean d^2   AUROC(maha)  AUROC(PCA residual norm)
+16      0.579         16.0                                      16.0                       6.8               0.090        0.932
+64      0.838         64.0                                      64.3                      51.7               0.257        0.949
+128     0.930        128.0                                     128.5                     202.3               0.868        0.951
+256     0.980        256.0                                     259.3                     868.5               0.946        0.953
+512     0.996        512.0                                     521.6                    5887.1               0.956        0.948
+
+reading: AUROC < 0.5 means failure frames have SMALLER Mahalanobis distance than success frames in that subspace (they sit closer to the fit mean).
+
+== (2) frames whose 30-frame partner is clamped (last 5 grid steps of an episode)
+share of frames clamped: success 0.102, failure 0.057
+score            AUROC OOD_vs_ID: all frames | excluding clamped frames | clamped frames only
+ens_std_M5        0.927                  0.925                     0.973
+ens_std_M10       0.934                  0.932                     0.983
+knn5_euc          0.922                  0.922                     0.991
+knn20_euc         0.939                  0.938                     0.987
+maha_pca128       0.868                  0.861                     0.942

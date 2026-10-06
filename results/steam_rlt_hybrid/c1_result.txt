@@ -1,0 +1,100 @@
+C1 result (elapsed 106s, peak host RSS 2.30GB)
+
+fit  : success episodes of ['r1_m0', 'r1_m1', 'r1_m2', 'r2_m1', 'r2_m2', 'r3_m0', 'r3_m1', 'r3_m2'] -> 1198 episodes, 58,683 frames (t % 6 == 0). Lmax=440.0
+test : ['r4_m0', 'r4_m1', 'r4_m2', 'eval_m0', 'eval_m1', 'eval_m2'] -> 1266 episodes, 90,606 frames; success 25,269 frames / failure 65,337 frames
+score: higher = more out-of-distribution. AUROC positives = OOD side. 0.5 = chance. 'min' = minimum over the four t bins.
+MLP : [z_t, z_u, z_u-z_t] -> 2x512, Huber, 15 epochs, 30-frame lookahead (clamped at the end), seeds 100.., M=5 uses members 0-4, M=10 all. k-NN: distance to the k-th neighbour. Maha: Ledoit-Wolf in PCA space.
+
+OOD_vs_ID: positives 65,337 / negatives 25,269   per t-bin positives [7510, 7510, 7510, 42807] negatives [5150, 5150, 5150, 9819]   (bins with <30 of either -> nan)
+miss_vs_hold: positives 6,532 / negatives 9,945   per t-bin positives [0, 1008, 597, 4927] negatives [53, 4601, 1120, 4171]   (bins with <30 of either -> nan)
+miss_vs_hold_alleps: positives 6,951 / negatives 16,505   per t-bin positives [0, 1067, 615, 5269] negatives [77, 6331, 1850, 8247]   (bins with <30 of either -> nan)
+
+tasks: OOD_vs_ID = failure-episode frames (positive) vs success-episode frames. miss_vs_hold = missed-grasp frames of FAILURE episodes vs held-grasp frames of SUCCESS episodes (spec; mixes in the success/failure difference).
+       miss_vs_hold_alleps = missed vs held grasp frames regardless of the episode outcome (as E0b; isolates the grasp-phase signal). miss = cmd>0 & gap<=0.03; hold = cmd>0 & 0.04<=gap<=0.071. No miss frames exist at t<60 -> that bin is nan.
+
+=== AUROC: OOD_vs_ID
+metric                               all    t0-60 t60-120t120-180   t180+    min
+ens_std_M5                         0.927   0.825   0.920   0.919   0.959    0.825
+ens_std_M10                        0.934   0.841   0.925   0.927   0.968    0.841
+knn1_euc                           0.908   0.779   0.907   0.904   0.965    0.779
+knn5_euc                           0.922   0.829   0.917   0.917   0.964    0.829
+knn20_euc                          0.939   0.875   0.926   0.940   0.962    0.875
+knn1_cos                           0.906   0.768   0.900   0.904   0.962    0.768
+knn5_cos                           0.920   0.825   0.911   0.916   0.961    0.825
+knn20_cos                          0.937   0.874   0.922   0.939   0.958    0.874
+maha_pca64                         0.257   0.240   0.311   0.261   0.276    0.240
+maha_pca128                        0.868   0.498   0.832   0.924   0.932    0.498
+comb[ens_std_M5+knn1_euc]          0.927   0.830   0.926   0.919   0.973    0.830
+comb[ens_std_M5+knn5_euc]          0.935   0.854   0.930   0.925   0.973    0.854
+comb[ens_std_M5+knn20_euc]         0.946   0.888   0.939   0.938   0.973    0.888
+comb[ens_std_M5+knn1_cos]          0.927   0.825   0.923   0.919   0.972    0.825
+comb[ens_std_M5+knn5_cos]          0.934   0.852   0.928   0.925   0.972    0.852
+comb[ens_std_M5+knn20_cos]         0.945   0.887   0.937   0.938   0.972    0.887
+comb[ens_std_M10+knn1_euc]         0.929   0.838   0.927   0.921   0.975    0.838
+comb[ens_std_M10+knn5_euc]         0.936   0.859   0.931   0.927   0.975    0.859
+comb[ens_std_M10+knn20_euc]        0.948   0.890   0.940   0.941   0.975    0.890
+comb[ens_std_M10+knn1_cos]         0.928   0.834   0.925   0.921   0.975    0.834
+comb[ens_std_M10+knn5_cos]         0.935   0.858   0.929   0.927   0.974    0.858
+comb[ens_std_M10+knn20_cos]        0.947   0.889   0.939   0.940   0.974    0.889
+ref_t (time only)                  0.706   0.500   0.500   0.500   0.787    0.500
+
+=== AUROC: miss_vs_hold
+metric                               all    t0-60 t60-120t120-180   t180+    min
+ens_std_M5                         0.991    nan    0.992   0.991   0.988    0.988
+ens_std_M10                        0.994    nan    0.994   0.995   0.993    0.993
+knn1_euc                           0.983    nan    0.987   0.999   0.979    0.979
+knn5_euc                           0.985    nan    0.986   0.997   0.979    0.979
+knn20_euc                          0.978    nan    0.970   0.991   0.973    0.970
+knn1_cos                           0.982    nan    0.987   0.999   0.975    0.975
+knn5_cos                           0.983    nan    0.986   0.996   0.974    0.974
+knn20_cos                          0.975    nan    0.970   0.990   0.968    0.968
+maha_pca64                         0.288    nan    0.256   0.256   0.363    0.256
+maha_pca128                        0.908    nan    0.748   0.936   0.962    0.748
+comb[ens_std_M5+knn1_euc]          0.993    nan    0.996   0.999   0.990    0.990
+comb[ens_std_M5+knn5_euc]          0.994    nan    0.996   0.999   0.990    0.990
+comb[ens_std_M5+knn20_euc]         0.992    nan    0.993   0.998   0.989    0.989
+comb[ens_std_M5+knn1_cos]          0.993    nan    0.996   0.999   0.989    0.989
+comb[ens_std_M5+knn5_cos]          0.993    nan    0.996   0.999   0.989    0.989
+comb[ens_std_M5+knn20_cos]         0.992    nan    0.993   0.998   0.988    0.988
+comb[ens_std_M10+knn1_euc]         0.994    nan    0.997   0.999   0.992    0.992
+comb[ens_std_M10+knn5_euc]         0.995    nan    0.996   0.999   0.992    0.992
+comb[ens_std_M10+knn20_euc]        0.993    nan    0.994   0.999   0.990    0.990
+comb[ens_std_M10+knn1_cos]         0.994    nan    0.997   0.999   0.991    0.991
+comb[ens_std_M10+knn5_cos]         0.994    nan    0.996   0.999   0.991    0.991
+comb[ens_std_M10+knn20_cos]        0.993    nan    0.994   0.999   0.989    0.989
+ref_t (time only)                  0.773    nan    0.420   0.781   0.800    0.420
+
+=== AUROC: miss_vs_hold_alleps
+metric                               all    t0-60 t60-120t120-180   t180+    min
+ens_std_M5                         0.863    nan    0.943   0.888   0.795    0.795
+ens_std_M10                        0.862    nan    0.945   0.888   0.791    0.791
+knn1_euc                           0.832    nan    0.952   0.891   0.744    0.744
+knn5_euc                           0.833    nan    0.953   0.891   0.744    0.744
+knn20_euc                          0.820    nan    0.914   0.880   0.738    0.738
+knn1_cos                           0.833    nan    0.954   0.893   0.743    0.743
+knn5_cos                           0.834    nan    0.954   0.894   0.743    0.743
+knn20_cos                          0.821    nan    0.919   0.883   0.737    0.737
+maha_pca64                         0.365    nan    0.280   0.308   0.464    0.280
+maha_pca128                        0.756    nan    0.673   0.822   0.746    0.673
+comb[ens_std_M5+knn1_euc]          0.856    nan    0.956   0.892   0.780    0.780
+comb[ens_std_M5+knn5_euc]          0.856    nan    0.956   0.893   0.779    0.779
+comb[ens_std_M5+knn20_euc]         0.852    nan    0.946   0.890   0.776    0.776
+comb[ens_std_M5+knn1_cos]          0.858    nan    0.957   0.894   0.782    0.782
+comb[ens_std_M5+knn5_cos]          0.857    nan    0.957   0.894   0.781    0.781
+comb[ens_std_M5+knn20_cos]         0.853    nan    0.948   0.892   0.777    0.777
+comb[ens_std_M10+knn1_euc]         0.854    nan    0.956   0.890   0.774    0.774
+comb[ens_std_M10+knn5_euc]         0.853    nan    0.957   0.890   0.773    0.773
+comb[ens_std_M10+knn20_euc]        0.849    nan    0.946   0.889   0.770    0.770
+comb[ens_std_M10+knn1_cos]         0.855    nan    0.957   0.891   0.776    0.776
+comb[ens_std_M10+knn5_cos]         0.855    nan    0.957   0.892   0.775    0.775
+comb[ens_std_M10+knn20_cos]        0.851    nan    0.949   0.890   0.771    0.771
+ref_t (time only)                  0.692    nan    0.430   0.694   0.648    0.430
+
+=== summary (auto-generated)
+OOD_vs_ID overall, top singles : knn20_euc 0.939, knn20_cos 0.937, ens_std_M10 0.934
+OOD_vs_ID worst-bin, top singles: knn20_euc 0.875, knn20_cos 0.874, ens_std_M10 0.841
+miss_vs_hold overall, top singles: ens_std_M10 0.994, ens_std_M5 0.991, knn5_euc 0.985
+miss_vs_hold worst-bin, top singles: ens_std_M10 0.993, ens_std_M5 0.988, knn5_euc 0.979
+miss_vs_hold_alleps overall, top singles: ens_std_M5 0.863, ens_std_M10 0.862, knn5_cos 0.834
+miss_vs_hold_alleps worst-bin, top singles: ens_std_M5 0.795, ens_std_M10 0.791, knn5_euc 0.744
+best combination (OOD_vs_ID overall): comb[ens_std_M10+knn20_euc] 0.948, comb[ens_std_M10+knn20_cos] 0.947
