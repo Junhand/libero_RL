@@ -360,6 +360,10 @@ PRE_ACTOR=<G の global_step_750/actor/model_state_dict/full_weights.pt> FIXED_S
 
 評価用の記録(診断データ): `tmp/rlt_stage2/diag/`、`tmp/rlt_stage2_b/diag/`(各約 3.5GB)。
 
+**注記(2026-10-06):** 上の表のうち、G(`tmp/rlt_stage2_b/…`)と I の学習・評価データ(`tmp/rlt_stage2_b/` 全体)、E2b(`tmp/rlt_stage2_e2/`)は、
+その後、削除された。G は H・I の 1 つ目の局面の actor だったため、**H・I の評価は、再現できない**(H 自身のチェックポイントと、D・F・C、RL token は残っている)。
+各評価の結果と動画は、wandb に残っている。
+
 ### 9.4 wandb(project `libero_RL`、entity `junhand`)
 
 | 評価 | run |
