@@ -1,0 +1,95 @@
+C2: lambda selection on validation sources, final values on test sources (the splits differ by data source; independence of initial states between sources is NOT checked)
+train: 1053 success episodes (r1_m0, r1_m1, r1_m2, r2_m1, r2_m2, r3_m0, r3_m1); val: 765 episodes (r3_m2, r4_m0); test: 862 episodes (r4_m1, r4_m2, eval_m0, eval_m1, eval_m2)
+val frames 54,711 (success-episode frames 15,648); test frames 61,933 (success-episode frames 16,867)
+columns: fp_fail = share of FAILURE-episode frames that become positive (lower is better); fp_miss = share of MISS frames (cmd>0, gap<=0.03) that become positive (lower);
+         au_hold = AUROC hold (cmd>0, 0.04<=gap<=0.071) vs miss (higher); au_succ = AUROC success-episode frames vs failure-episode frames (higher).
+positive = score >= the 30th percentile of the success-episode frames (70% of them are positive). score = mean - lambda*std over M members; 'min' = minimum over members.
+
+=== V0 seeds only (M=5)
+           | VALIDATION: fp_fail  fp_miss  au_hold  au_succ | TEST: fp_fail  fp_miss  au_hold  au_succ
+lam=0      | 0.120  0.045  0.817  0.879 | 0.115  0.046  0.818  0.881
+lam=0.5    | 0.114  0.041  0.821  0.886 | 0.110  0.042  0.822  0.888
+lam=1      | 0.109  0.037  0.824  0.891 | 0.104  0.037  0.825  0.893
+lam=2      | 0.100  0.029  0.830  0.901 | 0.096  0.031  0.831  0.903
+lam=4      | 0.089  0.018  0.837  0.914 | 0.083  0.018  0.839  0.915
+lam=8      | 0.078  0.010  0.845  0.927 | 0.072  0.010  0.846  0.928
+lam=16     | 0.073  0.009  0.850  0.935 | 0.069  0.006  0.851  0.936
+min        | 0.107  0.032  0.826  0.895 | 0.101  0.034  0.828  0.897
+selected lambda (validation): fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=16
+TEST value at the selected lambda:   fp_fail=0.069  fp_miss=0.006  au_hold=0.851  au_succ=0.936
+TEST value if lambda were chosen ON THE TEST sources (optimistic): fp_fail=0.069(lam=16)  fp_miss=0.006(lam=16)  au_hold=0.851(lam=16)  au_succ=0.936(lam=16)
+
+=== V1 bootstrap (M=5)
+           | VALIDATION: fp_fail  fp_miss  au_hold  au_succ | TEST: fp_fail  fp_miss  au_hold  au_succ
+lam=0      | 0.115  0.046  0.817  0.885 | 0.110  0.045  0.817  0.887
+lam=0.5    | 0.105  0.036  0.822  0.896 | 0.100  0.036  0.823  0.897
+lam=1      | 0.099  0.032  0.827  0.904 | 0.092  0.031  0.827  0.906
+lam=2      | 0.089  0.024  0.833  0.915 | 0.082  0.022  0.833  0.917
+lam=4      | 0.080  0.020  0.841  0.927 | 0.072  0.015  0.839  0.928
+lam=8      | 0.074  0.015  0.846  0.935 | 0.067  0.012  0.843  0.935
+lam=16     | 0.073  0.013  0.846  0.936 | 0.066  0.010  0.843  0.936
+min        | 0.095  0.027  0.829  0.909 | 0.087  0.026  0.829  0.910
+selected lambda (validation): fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=16
+TEST value at the selected lambda:   fp_fail=0.066  fp_miss=0.010  au_hold=0.843  au_succ=0.936
+TEST value if lambda were chosen ON THE TEST sources (optimistic): fp_fail=0.066(lam=16)  fp_miss=0.010(lam=16)  au_hold=0.843(lam=16)  au_succ=0.936(lam=16)
+
+=== V2 architectures (M=5)
+           | VALIDATION: fp_fail  fp_miss  au_hold  au_succ | TEST: fp_fail  fp_miss  au_hold  au_succ
+lam=0      | 0.117  0.037  0.824  0.881 | 0.111  0.041  0.826  0.884
+lam=0.5    | 0.109  0.028  0.830  0.889 | 0.104  0.030  0.832  0.892
+lam=1      | 0.103  0.022  0.835  0.895 | 0.097  0.023  0.836  0.898
+lam=2      | 0.094  0.014  0.843  0.904 | 0.088  0.013  0.843  0.906
+lam=4      | 0.083  0.007  0.853  0.914 | 0.077  0.007  0.851  0.916
+lam=8      | 0.075  0.007  0.861  0.923 | 0.070  0.005  0.857  0.924
+lam=16     | 0.074  0.004  0.866  0.926 | 0.070  0.005  0.861  0.928
+min        | 0.099  0.018  0.839  0.898 | 0.094  0.017  0.840  0.901
+selected lambda (validation): fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=16
+TEST value at the selected lambda:   fp_fail=0.070  fp_miss=0.005  au_hold=0.861  au_succ=0.928
+TEST value if lambda were chosen ON THE TEST sources (optimistic): fp_fail=0.070(lam=8)  fp_miss=0.005(lam=16)  au_hold=0.861(lam=16)  au_succ=0.928(lam=16)
+
+=== V3 noise+dropout (M=5)
+           | VALIDATION: fp_fail  fp_miss  au_hold  au_succ | TEST: fp_fail  fp_miss  au_hold  au_succ
+lam=0      | 0.105  0.041  0.814  0.892 | 0.101  0.042  0.815  0.894
+lam=0.5    | 0.102  0.037  0.817  0.896 | 0.098  0.038  0.818  0.898
+lam=1      | 0.099  0.034  0.819  0.900 | 0.094  0.034  0.820  0.902
+lam=2      | 0.094  0.029  0.824  0.906 | 0.089  0.028  0.825  0.908
+lam=4      | 0.087  0.020  0.831  0.915 | 0.081  0.020  0.831  0.916
+lam=8      | 0.079  0.014  0.839  0.925 | 0.074  0.012  0.839  0.926
+lam=16     | 0.075  0.013  0.847  0.933 | 0.070  0.009  0.846  0.934
+min        | 0.097  0.032  0.821  0.903 | 0.092  0.031  0.822  0.904
+selected lambda (validation): fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=16
+TEST value at the selected lambda:   fp_fail=0.070  fp_miss=0.009  au_hold=0.846  au_succ=0.934
+TEST value if lambda were chosen ON THE TEST sources (optimistic): fp_fail=0.070(lam=16)  fp_miss=0.009(lam=16)  au_hold=0.846(lam=16)  au_succ=0.934(lam=16)
+
+=== V4 bootstrap+V3 (M=5)
+           | VALIDATION: fp_fail  fp_miss  au_hold  au_succ | TEST: fp_fail  fp_miss  au_hold  au_succ
+lam=0      | 0.096  0.033  0.816  0.899 | 0.091  0.034  0.817  0.901
+lam=0.5    | 0.091  0.028  0.821  0.905 | 0.085  0.028  0.822  0.907
+lam=1      | 0.088  0.026  0.825  0.910 | 0.082  0.024  0.826  0.911
+lam=2      | 0.083  0.023  0.832  0.917 | 0.077  0.019  0.832  0.918
+lam=4      | 0.078  0.019  0.840  0.925 | 0.073  0.015  0.840  0.926
+lam=8      | 0.075  0.019  0.849  0.931 | 0.068  0.013  0.848  0.931
+lam=16     | 0.074  0.016  0.852  0.931 | 0.067  0.011  0.851  0.931
+min        | 0.085  0.025  0.828  0.913 | 0.079  0.022  0.828  0.914
+selected lambda (validation): fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=8
+TEST value at the selected lambda:   fp_fail=0.067  fp_miss=0.011  au_hold=0.851  au_succ=0.931
+TEST value if lambda were chosen ON THE TEST sources (optimistic): fp_fail=0.067(lam=16)  fp_miss=0.011(lam=16)  au_hold=0.851(lam=16)  au_succ=0.931(lam=8)
+
+=== M study, V1 bootstrap (members 0..M-1; lambda chosen on validation; test at that lambda)
+  M rule     | fp_fail  fp_miss  au_hold  au_succ | selected lambda per metric
+  1 min      | 0.121  0.053  0.827  0.878 |
+  1 mean-lam*std | 0.121  0.053  0.827  0.878 | fp_fail: lam=0, fp_miss: lam=0, au_hold: lam=0, au_succ: lam=0
+  3 min      | 0.093  0.030  0.830  0.902 |
+  3 mean-lam*std | 0.074  0.018  0.838  0.925 | fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=8, au_succ: lam=8
+  5 min      | 0.087  0.026  0.829  0.910 |
+  5 mean-lam*std | 0.066  0.010  0.843  0.936 | fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=16
+ 10 min      | 0.081  0.022  0.834  0.916 |
+ 10 mean-lam*std | 0.060  0.009  0.848  0.941 | fp_fail: lam=16, fp_miss: lam=16, au_hold: lam=16, au_succ: lam=16
+
+=== Optimism check on V0 (seeds only, the previous design)
+fp_fail : test at lambda=4 0.083 | test at validation-selected 0.069 (lam=16) | test-oracle (lambda chosen on test) 0.069 (lam=16) | single member (lambda=0, mean) 0.115
+fp_miss : test at lambda=4 0.018 | test at validation-selected 0.006 (lam=16) | test-oracle (lambda chosen on test) 0.006 (lam=16) | single member (lambda=0, mean) 0.046
+au_hold : test at lambda=4 0.839 | test at validation-selected 0.851 (lam=16) | test-oracle (lambda chosen on test) 0.851 (lam=16) | single member (lambda=0, mean) 0.818
+au_succ : test at lambda=4 0.915 | test at validation-selected 0.936 (lam=16) | test-oracle (lambda chosen on test) 0.936 (lam=16) | single member (lambda=0, mean) 0.881
+
+elapsed 272s
