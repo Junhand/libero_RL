@@ -1,0 +1,106 @@
+diff --git a/rlinf/models/embodiment/smolvla/fpo.py b/rlinf/models/embodiment/smolvla/fpo.py
+new file mode 100644
+index 0000000..dd0e6bb
+--- /dev/null
++++ b/rlinf/models/embodiment/smolvla/fpo.py
+@@ -0,0 +1,100 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Flow Policy Optimization (vanilla FPO, arXiv:2507.21053) for SmolVLA.
++
++The conditional flow-matching (CFM) loss of a sampled action chunk, evaluated with fixed flow times and
++noise, replaces the log-likelihood in a PPO surrogate: ``log_ratio = L_old - L_new``. This module only holds
++the SmolVLA specific part (the CFM loss); the reference implementation of the rest is verl-vla
++(``src/verl_vla/workers/engine/fpo/training_worker.py``, ``models/pi0_torch/trainable_model.py``).
++"""
++
++import torch
++import torch.nn.functional as F
++
++
++def _repeat_kv_cache(past_key_values, repeats: int):
++    """Repeat every layer of a ``DynamicCache`` ``repeats`` times along the batch dimension."""
++    from transformers import DynamicCache
++
++    repeated = DynamicCache()
++    for layer_idx, layer in enumerate(past_key_values.layers):
++        repeated.update(
++            layer.keys.repeat_interleave(repeats, dim=0),
++            layer.values.repeat_interleave(repeats, dim=0),
++            layer_idx,
++        )
++    return repeated
++
++
++def smolvla_fpo_cfm_loss(
++    model,
++    images,
++    img_masks,
++    lang_tokens,
++    lang_masks,
++    state,
++    actions: torch.Tensor,
++    timesteps: torch.Tensor,
++    noise: torch.Tensor,
++    *,
++    action_dim: int,
++    num_steps: int,
++    train_vlm: bool = False,
++) -> torch.Tensor:
++    """Unreduced CFM losses ``[B, num_steps, N]`` of ``N`` (time, noise) samples per action chunk.
++
++    Args:
++        model: lerobot ``VLAFlowMatching`` (``policy.model``).
++        images, img_masks, lang_tokens, lang_masks, state: model inputs (as in ``policy.forward``).
++        actions: ``[B, chunk, max_action_dim]`` normalised chunk, padded with zeros (as in SFT).
++        timesteps: ``[B, N]`` flow times in (0, 1).
++        noise: ``[B, N, chunk, max_action_dim]`` standard-normal noise.
++        action_dim: number of real action dimensions (padding dimensions are not part of the ratio).
++        num_steps: number of leading action steps that enter the loss (the executed ones).
++        train_vlm: if False the image/language prefix is computed without gradients.
++    """
++    from lerobot.policies.smolvla.modeling_smolvla import make_att_2d_masks
++
++    if timesteps.ndim != 2 or noise.ndim != 4:
++        raise ValueError(f"timesteps must be [B, N] and noise [B, N, C, D]; got {tuple(timesteps.shape)}, {tuple(noise.shape)}")
++    batch_size, n_samples = timesteps.shape
++
++    ctx = torch.enable_grad() if train_vlm else torch.no_grad()
++    with ctx:
++        prefix_embs, prefix_pad_masks, prefix_att_masks = model.embed_prefix(
++            images, img_masks, lang_tokens, lang_masks, state=state
++        )
++        prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
++        prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
++        _, past_key_values = model.vlm_with_expert.forward(
++            attention_mask=prefix_att_2d_masks,
++            position_ids=prefix_position_ids,
++            past_key_values=None,
++            inputs_embeds=[prefix_embs, None],
++            use_cache=True,
++        )
++    past_key_values = _repeat_kv_cache(past_key_values, n_samples)
++
++    rep = lambda x: x.repeat_interleave(n_samples, dim=0)  # noqa: E731  ([B, ...] -> [B*N, ...], index b*N + n)
++    a = rep(actions).to(torch.float32)
++    t = timesteps.reshape(-1).to(device=a.device, dtype=torch.float32)
++    eps = noise.reshape(batch_size * n_samples, *noise.shape[2:]).to(device=a.device, dtype=torch.float32)
++    x_t = t[:, None, None] * eps + (1.0 - t[:, None, None]) * a
++    target_velocity = eps - a
++
++    v_t = model.denoise_step(rep(prefix_pad_masks), past_key_values, x_t, t)
++    loss = F.mse_loss(v_t[:, :num_steps, :action_dim], target_velocity[:, :num_steps, :action_dim], reduction="none")
++    loss = loss.mean(dim=-1)  # [B*N, num_steps]
++    return loss.reshape(batch_size, n_samples, num_steps).permute(0, 2, 1)
