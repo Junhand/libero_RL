@@ -18,6 +18,7 @@ GPU は RTX A5000（24GB）、コンテナのメモリ上限 25GB。実行は、
 9. 診断と調査（行動の効果量、重みづけの計算、各種の測定）
 10. 障害・トラブルの時系列
 11. 計算資源の使用量
+12. critic の高速化（LoRA・凍結）の詳細（2026-10-06〜07 追加）
 
 ## 1. データの準備（再収集と変換）
 
@@ -296,3 +297,47 @@ smolVLA 版（`smolvla_cfg.py:227-231`、パッチ由来）は、**逆**。`true
 ## 11. 計算資源の使用量（概算）
 - 実験で使った GPU 時間（A5000）: critic の学習 約 16 時間（#1〜11 の合計 3,872 step × 約 15 秒。うち 10-01 の #1〜3 が約 4.6 時間）、advantage の計算 約 20 時間（step 600 の critic 約 10 時間、step 2000 の critic 約 10 時間、評価データでの確認 約 1.5 時間）、Step 4 の学習 約 38 時間（旧 ①② 約 13.5 時間、新 約 13.4 時間、P、T 各約 5 時間）、評価 約 2 時間。
 - ディスク: checkpoint を、あなたの指示で約 160GB 削除（動作確認、旧 Step 4 の step 600 以外、旧 critic の step 2000 以外）。現在 残している checkpoint は、critic の step 2000（8.7GB）、旧 Step 4 ② の step 600（6.3GB）、新の step 1000（保護コピー）、実験 P・T の各 4 つ。
+
+## 12. critic の高速化（LoRA・凍結）の詳細（2026-10-06〜07 追加）
+
+要約と結果の表は、`results/steam_smolvla_libero10_task0.md` の 11・12 節。ここは、実施の経過、コマンド、障害の記録。
+
+### 12.1 実施の流れ
+1. LoRA の実装（開発用コピー `tmp/rlinf_steam_dev` で作業 → パッチ化）。`SteamConfig` に `lora_enable`、`lora_r`（16）、`lora_alpha`（32）、`lora_dropout`（0）、`lora_apply_to` を追加。`SteamBackbone._inject_lora` が、peft の `inject_adapter_in_model` で、アダプタを注入し、アダプタ以外を凍結する。学習するパラメータ: 全体 1,147.8M、視覚を凍結 269.8M、両方を凍結 1.72M、LoRA（視覚 8.9M + 言語 3.8M + ヘッド）14.4M。アダプタの dtype は bf16。
+2. 速度テスト（30 step、`scripts/steam_lora/run_variant.sh` と `speed_test.sh`、32 step で止める `speed_cap.sh`）。
+3. 両方を凍結した critic の学習（`train_frozen.sh`、続き `train_frozen_cont.sh`）。
+4. 評価データのラベル付け（`label_eval.sh`、約 20 分）と比較（`eval_critics.py`）。
+5. パッチ `smolvla-z-steam-lora.patch`（4 ファイル: `configuration.py`、`__init__.py`、`modeling_steam.py`、`fsdp_steam_sft_worker.py`）。クリーンに適用できることを `git apply --check` で確認（適用はしていない）。
+
+### 12.2 速度テストの生の記録（TensorBoard の `time/step`）
+- 全体: 29 step 記録、最初 15.6 秒、中央値（6 step 目以降）14.82 秒。
+- 視覚を凍結: 30 step、最初 8.8 秒、中央値 5.21 秒、平均 5.82 秒。
+- 両方を凍結: 29 step、最初 5.5 秒、中央値 4.14 秒、平均 4.17 秒。
+- LoRA: 32 step、最初 21.9 秒、中央値 19.87 秒。
+- 「全体」と「両方を凍結」は、30 step の最後の保存で FSDP のエラー（12.3）。測定には影響なし。
+
+### 12.3 障害・トラブルの記録（時系列）
+
+| 事象 | 原因 | 対処 |
+|---|---|---|
+| 1 回目の測定が全部失敗（`ConnectionError: Could not find any running Ray instance`、`AF_UNIX path length cannot exceed 107 bytes`） | 一時ディレクトリ（`tmp/steam_lora/tmpdir`）のパスが長く、Ray のソケットのパスが 107 バイトを超えた | 一時ディレクトリを `tmp/sl` に短縮 |
+| LoRA が起動しない（Hydra: `Ambiguous value for argument '+actor.model.lora_apply_to=vision,language'`） | 値のカンマ | 区切りを `+` に変更し、コードで `,`・`+`・`|` を受け付けた |
+| 「両方を凍結」と「全体」の最終 step で、`AssertionError: FSDP assumes model.vision_encoder.logit_scale is in the state_dict` | FSDP の全状態の保存フックが、凍結した SigLIP の `logit_scale` を扱えない | 凍結のとき、学習した部分だけを保存（12.4） |
+| LoRA の実行が、起動直後に、ログが空のまま止まる（3 回） | ディスクの quota 超過（`tee: ...: Disk quota exceeded`、Ray の `Timed out waiting for file .../gcs_server_port_...`、`git status` が `.git/index.lock` を閉じられない）。直前の速度テストが、最終 step に保存したチェックポイント（視覚を凍結した実行 5.4 GB、全体の実行 2.3 GB）が一因と見られる（他の環境・セッションの書き込みの影響は、切り分けていない） | チェックポイント約 7.6 GB を削除（ユーザー）。以降、32 step で止める `speed_cap.sh` を使い、保存を避けた |
+| 両方を凍結の最初の保存テストで、保存されたテンソルが 0 個（1,291 バイト） | 学習対象の判定を、FSDP の `summon_full_params` の外で行い、名前が一致しなかった | 判定を、コンテキストの内側に移動。12 step のテストで、10 テンソル（6.9 MB）を確認 |
+| 2,000 step の学習が、step 1,618 で停止 | ツールのバックグラウンド実行の上限が約 2 時間で、指定した 4 時間が切り詰められた | step 1,000 の重みから、残り 1,000 step を、切り離した実行で続けた（12.4） |
+| 続きの学習の起動で `Could not override 'actor.model.model_path'`（Hydra） | 構造にないキー | `+actor.model.model_path=...` に変更 |
+
+### 12.4 凍結の保存と続きの学習
+- 保存: `fsdp_steam_sft_worker.py` の `_save_trainable_weights_only`。`summon_full_params` の内側で、`requires_grad` のパラメータを、名前の接頭辞（`_fsdp_wrapped_module.` など）を除いて、`<save_path>/model_state_dict/full_weights.pt` に保存する。オプティマイザは保存しない（**重みだけ**）。
+- 続き: step 1,000 の重みを `+actor.model.model_path` で読み込み、学習率 1e-4（`lr_warmup_steps=20`、最小 1e-6 まで余弦）、`data.seed=1` で、1,000 step。**オプティマイザの状態と学習率のスケジュールが再開される**ため、途切れなく 2,000 step 学習した場合とは、完全には同じでない。
+
+### 12.5 学習の時間の内訳（TensorBoard の記録）
+- 1 回目: 17:29:52〜19:27:52（1.97 時間、1,618 step）。step 1,000 までの `time/step` の合計 1.21 時間。step 1,001〜1,618 は 0.75 時間で、結果として使わなかった。
+- 続き: 19:32:36〜20:45:52（1.22 時間、1,000 step、中央値 4.39 秒）。
+- 有効な 2,000 step: 2.44 時間（起動の準備 2〜3 分/回を除く）。実際に GPU を使った時間は、約 3.2 時間。
+
+### 12.6 評価の注意
+- 評価データのラベルは、`tmp/steam_lora/shadow_eval/`（`tmp/steam/shadow/eval_v2_m*` を `cp -a` したコピー。動画とデータは、元へのシンボリックリンク）に書いた。元の shadow ディレクトリは変更していない。
+- 実験 F のラベルは、元の `advantages_n32e2000_eval.parquet`（コピーに含まれる）。
+- 比較のブートストラップ: 64 エピソードを復元抽出（200 回）して、AUC の差を計算。区間は、評価データの抽出の不確かさのみ。
