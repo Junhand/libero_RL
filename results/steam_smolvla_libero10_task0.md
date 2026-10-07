@@ -1,5 +1,7 @@
 # STEAM の再現実験（smolVLA、LIBERO-10 Task 0）の結果
 
+**状態: 完了（2026-10-07、ユーザーの判断）。** 追加の STEAM の実験は行わない。未実施として残る項目は、8 節（P の再評価、ガイダンスの実装、critic のアンサンブル化、全データへの advantage 計算、専門家デモの増加）と、11 節（凍結した critic での Step 4、advantage 計算の特徴量の再利用、凍結 critic のシード・学習率違いの再現）。
+
 RLinf の STEAM（Self-supervised Temporal Ensemble Advantage Modeling、arXiv:2606.29834）を、smolVLA（`lerobot/smolvla_libero`）で、LIBERO-10 の Task 0 に適用した実験の記録。
 期間は 2026-10-01 〜 10-04。GPU は RTX A5000（24GB、コンテナのメモリ上限 25GB）。論文の日本語訳は `docs/steam_paper_ja.md`。
 **全実験の詳細（条件、数値、時系列、障害）は `results/steam_smolvla_libero10_task0_details.md`**。
