@@ -188,3 +188,21 @@ RLinf の PPO（`embodied_fsdp_actor_worker.py`）は、`model(forward_inputs=..
 
 ### 判定と次
 動作（学習が破綻しない、ratio・clip・KL が妥当）は確認できた。**学習の効果は、8 更新では判定できない。** verl-vla の recipe は、30 更新で成功率 58%→100%（8 GPU、640 チャンク/更新）。ここでは 1 更新 780 チャンクなので、同程度の規模で、30 更新（約 4 時間）が目安。
+
+## 15. 30 更新の崩壊と、verl-vla との差分の修正（2026-10-07）
+
+### 30 更新の結果（修正前の実装）
+1 回目の 30 更新は、10 更新目の保存中にホストメモリ不足で落ち、再開した後に、成功率が 0 に崩壊した（更新 20 以降の success_once はすべて 0、grad_norm 最大 2,722、ratio 最大 1,617）。再開が影響したかは切り分けられていない。更新 1〜10 の success_once の平均は 0.57。
+
+### verl-vla との比較で見つかった差分
+`src/verl_vla/workers/engine/fpo/training_worker.py` と `examples/rl/fpo/pi05/*/fpo.yaml` を読んで比較した。
+- **比率（重要）**: verl-vla は 1 チャンクに 1 つ（`log_ratio = Σ_h mean_n (L_old − L_new)`、clip 0.01）。修正前の実装は、(ステップ, サンプル) ごとに 40 個を個別に clip していた。S1 のときに「verl-vla と同じ」と書いたのは誤りだった。→ **修正**: `logprobs` を `[B, 1]`（`-Σ_h mean_n loss`）にし、`logprob_last_dim: 1`。
+- **早期停止**: verl-vla は `target_kl 0.1`（エポックの平均 KL が超えたら、残りのエポックをやめる）。→ **追加**: `algorithm.target_kl: 0.1`（k3 推定量 `actor/approx_kl_k3` の平均で判定）。
+- 打ち切り（520 ステップ）は終端として扱う: verl-vla も同じ（`done = terminated | truncated`、次の価値を 0）。GAE の割引（`γ^実行ステップ数 × (1−done)`）は、実質同じ。
+- 未修正の差分: アドバンテージの正規化（verl-vla はミニバッチごと、こちらはロールアウト全体）、勾配クリップ（verl-vla は方策と価値で別、こちらは合算）、価値の損失（0.5·MSE と Huber）、精度（bf16 と fp32）、環境（200 ステップ・auto_reset=True と、520 ステップ・auto_reset=False）、初期の方策（SFT の途中と、最終チェックポイント）。
+
+### 再開の不具合
+チェックポイントからの再開で、optimizer の param_group にハイパーパラメータ（`betas` など）が欠けて `KeyError` になった。復元後に、欠けたキーを optimizer の既定値で補う処理を `fsdp_model_manager.py` に追加した。
+
+### 実行
+修正後の実装で、30 更新を最初から実行（`tmp/hybrid_fpo/logs/run_1007_211542`、保存は最後の 1 回のみ）。環境 1・2 の実行（勾配クリップ 1.0、lr 3e-6）は、修正前の実装なので、止めて、修正版で回し直す。

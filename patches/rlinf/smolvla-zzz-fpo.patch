@@ -21,7 +21,34 @@
          **rlt_kwargs,
 --- a/rlinf/workers/actor/embodied_fsdp_actor_worker.py
 +++ b/rlinf/workers/actor/embodied_fsdp_actor_worker.py
-@@ -753,7 +753,9 @@
+@@ -624,7 +624,9 @@
+         if self.cfg.algorithm.get("recompute_logprobs", False):
+             append_to_dict(metrics, self.recompute_prev_logprobs(batch_size_per_rank))
+         update_epoch = self.cfg.algorithm.get("update_epoch", 1)
++        target_kl = self.cfg.algorithm.get("target_kl", None)
+         for _ in range(update_epoch):
++            kl_start = len(metrics.get("actor/approx_kl_k3", []))
+             rollout_dataloader_iter = split_dict_to_chunk(
+                 self.rollout_batch,
+                 rollout_size // batch_size_per_rank,
+@@ -667,6 +669,16 @@
+                 if len(lr_list) > 1:
+                     data["critic/lr"] = lr_list[1]
+                 append_to_dict(metrics, data)
++            epoch_kls = metrics.get("actor/approx_kl_k3", [])[kl_start:]
++            if target_kl is not None and epoch_kls:
++                mean_epoch_kl = float(np.mean([float(k) for k in epoch_kls]))
++                mean_epoch_kl = float(
++                    all_reduce_dict(
++                        {"kl": mean_epoch_kl}, op=torch.distributed.ReduceOp.AVG
++                    )["kl"]
++                )
++                if mean_epoch_kl > target_kl:
++                    break
+         # put LR scheduler step here
+         self.lr_scheduler.step()
+         self.optimizer.zero_grad()
+@@ -753,7 +765,9 @@
              "loss_type": self.cfg.algorithm.loss_type,
              "logprob_type": self.cfg.algorithm.logprob_type,
              "reward_type": self.cfg.algorithm.reward_type,
@@ -32,6 +59,40 @@
              "logprobs": output_dict["logprobs"],
              "values": output_dict.get("values", None),
              "old_logprobs": prev_logprobs,
+--- a/rlinf/algorithms/losses.py
++++ b/rlinf/algorithms/losses.py
+@@ -300,6 +300,9 @@
+ 
+     clip_fraction = masked_mean(clip_mask.float(), loss_mask_for_metrics)
+     approx_kl = -masked_mean(log_ratio.detach(), loss_mask_for_metrics)
++    approx_kl_k3 = masked_mean(
++        (torch.exp(log_ratio.detach()) - 1.0) - log_ratio.detach(), loss_mask_for_metrics
++    )
+ 
+     # Compile metrics for logging
+     ratio_for_metrics = ratio.detach()
+@@ -319,6 +322,7 @@
+             dual_cliped_ratio_for_metrics, loss_mask_for_metrics
+         ),
+         "actor/approx_kl": approx_kl.detach(),
++        "actor/approx_kl_k3": approx_kl_k3.detach(),
+         "actor/clip_fraction": clip_fraction.detach(),
+     }
+     if log_logprob_diagnostics:
+--- a/rlinf/hybrid_engines/fsdp/fsdp_model_manager.py
++++ b/rlinf/hybrid_engines/fsdp/fsdp_model_manager.py
+@@ -383,6 +383,11 @@
+         self._strategy.load_checkpoint(
+             self.model, self.optimizer, self.lr_scheduler, load_path
+         )
++        # The restored param_groups may lack hyper-parameters (e.g. betas) when
++        # the optimizer has several groups; fill them from the optimizer defaults.
++        for group in self.optimizer.param_groups:
++            for key, value in self.optimizer.defaults.items():
++                group.setdefault(key, value)
+ 
+     def save_checkpoint(self, save_path: str, step: int = 0) -> None:
+         """
 --- /dev/null
 +++ b/rlinf/models/embodiment/smolvla/fpo.py
 @@ -0,0 +1,108 @@
@@ -145,7 +206,7 @@
 +    return (loss, features) if return_features else loss
 --- /dev/null
 +++ b/rlinf/models/embodiment/smolvla/smolvla_fpo_model.py
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,195 @@
 +# Copyright 2026 The RLinf Authors.
 +#
 +# Licensed under the Apache License, Version 2.0 (the "License");
@@ -163,9 +224,10 @@
 +"""SmolVLA for vanilla Flow Policy Optimization (FPO, arXiv:2507.21053) in RLinf's embodied PPO.
 +
 +Mapping onto RLinf's PPO (``loss_type: actor_critic``, ``logprob_type: token_level``):
-+  * ``logprobs``     = ``-CFM loss`` of ``N`` fixed (time, noise) samples per executed action step, ``[B, H * N]``.
-+                       ``old_logprobs`` come from the rollout (same weights, same fixed samples), so
-+                       ``ratio = exp(L_old - L_new)`` per (step, sample), as in verl-vla's FPO.
++  * ``logprobs``     = ``-sum_h mean_n CFM loss`` of ``N`` fixed (time, noise) samples over the ``H`` executed
++                       action steps, ``[B, 1]``. ``old_logprobs`` come from the rollout (same weights, same fixed
++                       samples), so there is one ratio ``exp(sum_h mean_n (L_old - L_new))`` per action chunk, as in
++                       verl-vla's FPO (``training_worker.py``).
 +  * ``values``       = MLP value head over the mean-pooled final-layer VLM prefix and the robot state.
 +  * trainable        = action expert, action input/output projections and time MLP, value head. The VLM
 +                       (including ``state_proj``, which is part of the prefix) is frozen.
@@ -226,6 +288,11 @@
 +            for parameter in module.parameters():
 +                parameter.requires_grad = True
 +
++    @staticmethod
++    def _chunk_logprob(loss: torch.Tensor) -> torch.Tensor:
++        """[B, H, N] CFM losses -> [B, 1] chunk log-likelihood surrogate (sum over steps, mean over samples)."""
++        return (-loss.sum(dim=1).mean(dim=-1)).unsqueeze(-1).float()
++
 +    # ------------------------------------------------------------------ inputs
 +    def _model_inputs(self, batch: dict[str, Any]):
 +        from lerobot.utils.constants import (
@@ -273,7 +340,7 @@
 +            self.policy.model, images, img_masks, lang_tokens, lang_masks, state, act_pad, timesteps, noise,
 +            action_dim=self.action_dim, num_steps=num_steps, return_features=True,
 +        )
-+        prev_logprobs = (-loss).reshape(batch_size, -1).float().cpu()
++        prev_logprobs = self._chunk_logprob(loss).cpu()
 +        prev_values = self._value(features, batch).reshape(batch_size, 1).cpu()
 +
 +        actions = normalized[:, :num_steps, : self.action_dim].float().cpu()
@@ -331,13 +398,13 @@
 +            action_dim=self.action_dim, num_steps=self.num_action_chunks, return_features=True,
 +        )
 +        return {
-+            "logprobs": (-loss).reshape(batch_size, -1).float(),
++            "logprobs": self._chunk_logprob(loss),
 +            "values": self._value(features, batch),
 +            "entropy": torch.zeros(batch_size, 1, device=device, dtype=torch.float32),
 +        }
 --- /dev/null
 +++ b/examples/embodiment/config/libero_10_smolvla_fpo.yaml
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,179 @@
 +# Vanilla Flow Policy Optimization (FPO, arXiv:2507.21053) for SmolVLA on LIBERO-10 Task 0.
 +# PPO with the conditional flow-matching loss of N fixed (time, noise) samples as the log-likelihood (see
 +# rlinf/models/embodiment/smolvla/smolvla_fpo_model.py and docs/fpo_smolvla_design.md).
@@ -385,9 +452,10 @@
 +
 +  reward_type: chunk_level
 +  logprob_type: token_level   # ratio per (action step, CFM sample), as in FPO
-+  logprob_last_dim: 4         # = n_action_samples (actor.model.smolvla.fpo.n_action_samples)
++  logprob_last_dim: 1         # one chunk-level log-ratio per action chunk
 +  entropy_type: token_level
 +  update_epoch: 2
++  target_kl: 0.1               # stop the remaining update epochs when the mean epoch KL (k3) exceeds this
 +  adv_type: gae
 +  loss_type: actor_critic
 +  loss_agg_func: "token-mean"
