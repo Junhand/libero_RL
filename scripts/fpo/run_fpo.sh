@@ -5,6 +5,7 @@ cd $DEV && source $ROOT/RLinf/.venv-smolvla/bin/activate
 export EMBODIED_PATH=$DEV/examples/embodiment REPO_PATH=$DEV PYTHONPATH=$DEV
 export WANDB_CONSOLE=off WANDB_DISABLE_CODE=true WANDB__DISABLE_STATS=true WANDB_SILENT=true
 export HF_HUB_OFFLINE=1 MUJOCO_GL=egl PYOPENGL_PLATFORM=egl ROBOT_PLATFORM=LIBERO LIBERO_TYPE=standard
+export RAY_memory_usage_threshold=0.995  # cgroup usage includes reclaimable page cache (~3GB)
 export TMPDIR=$ROOT/tmp/sl3; mkdir -p $TMPDIR
 LOG=$ROOT/tmp/hybrid_fpo/logs/run_$(date +%m%d_%H%M%S); mkdir -p $LOG
 python $EMBODIED_PATH/train_embodied_agent.py --config-path $EMBODIED_PATH/config --config-name libero_10_smolvla_fpo \
