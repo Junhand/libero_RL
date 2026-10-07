@@ -1,0 +1,43 @@
+frames 299103  episodes 4186  V* std 0.262  V* mean 0.145
+
+== unseen_state ==
+EV: 0.678
+spearman: 0.673
+AUROC_t0-60: 0.665
+AUROC_t60-120: 0.885
+AUROC_t120-180: 0.921
+AUROC_t180-: 0.944
+EV_min_fold: 0.595
+TD n=294917 std(delta_pred)=0.0644 std(delta with true V)=0.0000
+calib (mean V_pred, mean V*) by decile: (-0.05,0.02) (-0.01,0.00) (0.01,0.01) (0.02,0.01) (0.04,0.01) (0.06,0.04) (0.11,0.11) (0.21,0.22) (0.34,0.34) (0.68,0.69)
+
+== control_state ==
+EV: 0.852
+spearman: 0.762
+AUROC_t0-60: 0.927
+AUROC_t60-120: 0.962
+AUROC_t120-180: 0.974
+AUROC_t180-: 0.973
+TD n=58290 std(delta_pred)=0.0473 std(delta with true V)=0.0000
+calib (mean V_pred, mean V*) by decile: (-0.02,0.01) (-0.01,0.00) (-0.00,0.00) (0.00,0.00) (0.01,0.00) (0.02,0.01) (0.08,0.09) (0.22,0.25) (0.41,0.42) (0.76,0.76)
+
+== unseen_nostate ==
+EV: 0.689
+spearman: 0.680
+AUROC_t0-60: 0.753
+AUROC_t60-120: 0.897
+AUROC_t120-180: 0.923
+AUROC_t180-: 0.940
+EV_min_fold: 0.612
+TD n=294917 std(delta_pred)=0.0662 std(delta with true V)=0.0000
+calib (mean V_pred, mean V*) by decile: (-0.06,0.02) (-0.01,0.01) (0.00,0.01) (0.02,0.01) (0.03,0.01) (0.06,0.03) (0.12,0.11) (0.22,0.23) (0.36,0.34) (0.68,0.70)
+
+== control_nostate ==
+EV: 0.850
+spearman: 0.757
+AUROC_t0-60: 0.927
+AUROC_t60-120: 0.960
+AUROC_t120-180: 0.970
+AUROC_t180-: 0.967
+TD n=58290 std(delta_pred)=0.0475 std(delta with true V)=0.0000
+calib (mean V_pred, mean V*) by decile: (-0.03,0.01) (-0.00,0.00) (-0.00,0.00) (0.00,0.00) (0.01,0.00) (0.02,0.01) (0.07,0.08) (0.22,0.25) (0.41,0.42) (0.77,0.76)
