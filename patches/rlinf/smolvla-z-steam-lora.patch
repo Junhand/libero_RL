@@ -105,3 +105,55 @@ index 41627fc..d6259d2 100644
  
      # ------------------------------------------------------------------
      # Image preprocessing — ranges and resolution
+diff --git a/rlinf/workers/sft/fsdp_steam_sft_worker.py b/rlinf/workers/sft/fsdp_steam_sft_worker.py
+index 375a83c..78e50c3 100644
+--- a/rlinf/workers/sft/fsdp_steam_sft_worker.py
++++ b/rlinf/workers/sft/fsdp_steam_sft_worker.py
+@@ -201,9 +201,46 @@ class FSDPSteamSftWorker(FSDPModelManager, Worker):
+                 self.cfg.actor.model.ensemble_head_seed_base = int(self.cfg.actor.seed)
+         return get_model(self.cfg.actor.model)
+ 
++    def _save_trainable_weights_only(self, save_path: str, step: int) -> None:
++        """Save only the trainable parameters (``<save_path>/model_state_dict/full_weights.pt``).
++
++        Used when the vision encoder AND the language model are frozen: FSDP's full-state-dict hook
++        asserts on the fully frozen SigLIP wrapper (``logit_scale`` missing), and the frozen weights are
++        identical to the pretrained ones that ``get_model`` loads anyway (``strict=False`` load)."""
++        import os
++
++        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
++
++        state = {}
++        with FSDP.summon_full_params(self.model, writeback=False):
++            for name, parameter in self.model.named_parameters():
++                if not parameter.requires_grad:
++                    continue
++                clean = name
++                for token in ("_fsdp_wrapped_module.", "_checkpoint_wrapped_module.", "_orig_mod."):
++                    clean = clean.replace(token, "")
++                state[clean] = parameter.detach().to("cpu", dtype=torch.float32).clone()
++        if self._rank == 0:
++            out_dir = os.path.join(save_path, "model_state_dict")
++            os.makedirs(out_dir, exist_ok=True)
++            torch.save(state, os.path.join(out_dir, "full_weights.pt"))
++            logging.getLogger(__name__).info(
++                "Saved %d trainable tensors (%.1f MB) at step %d to %s",
++                len(state),
++                sum(t.numel() * 4 for t in state.values()) / 1e6,
++                step,
++                out_dir,
++            )
++
+     def save_checkpoint(self, save_path: str, step: int = 0) -> None:
+         """Save weights plus lightweight checkpoint-side model assets."""
+-        super().save_checkpoint(save_path, step)
++        model_cfg = self.cfg.actor.model
++        if bool(getattr(model_cfg, "freeze_vision_encoder", False)) and bool(
++            getattr(model_cfg, "freeze_language_model", False)
++        ):
++            self._save_trainable_weights_only(save_path, step)
++        else:
++            super().save_checkpoint(save_path, step)
+ 
+         if self._rank == 0:
+             from rlinf.models.embodiment.value_model.steam import (
