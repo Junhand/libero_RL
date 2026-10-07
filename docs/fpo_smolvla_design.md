@@ -61,3 +61,15 @@
 2. **S1:** ロールアウトでの保存、GAE、1 回の更新の動作確認。
 3. **S2:** Task 0 で、5〜10 更新の学習曲線（学習中の成功率、比の統計、KL）。
 4. **S3:** 評価（50 → 150 エピソード）。ベース 0.46、対照 0.56、RL Token（D 0.62、H 0.74）と比べる。
+
+## 9. 変更点の一覧（RLinf への実装。パッチ `patches/rlinf/smolvla-aa-fpo.patch` にまとめる予定）
+RLinf の PPO（`embodied_fsdp_actor_worker.py`）は、`model(forward_inputs=..., compute_logprobs=True, compute_values=True, use_cache=False)` を呼び、出力の `logprobs`（形: [B, ステップ, 次元]）と `values` から、`actor_critic` の損失（clip）を計算する。ロールアウトは、`prev_logprobs`、`prev_values`、`forward_inputs` を保存する。この契約に合わせる。
+
+| ファイル | 変更 |
+|---|---|
+| `rlinf/models/embodiment/smolvla/smolvla_action_model.py` | (1) 価値ヘッド `value_head`（VLM のプレフィックスのプール 960 + 状態 8 → MLP → 1）。名前に `value_head` を含めれば、オプティマイザが、価値用の学習率を使う。(2) `fpo_cfm_loss`: プレフィックスを 1 回（no_grad）、KV を N 個に複製、`denoise_step`、損失は先頭 10 ステップ × 先頭 7 次元 → [B, N, ステップ]。(3) `default_forward`（現在は未実装）: `logprobs = −CFM 損失`、`values`。(4) `predict_action_batch`: 乱数ノイズで行動を生成し、τ、ε、行動のチャンク（正規化済み、0 でパディング）、観測のテンソルを `forward_inputs` に保存。`prev_logprobs = −CFM 損失`（no_grad、現在の重み）、`prev_values` を返す。(5) VLM の凍結と、アクションエキスパートの学習設定 |
+| `rlinf/models/embodiment/smolvla/__init__.py` | FPO の設定（`n_action_samples`、価値ヘッドの層、凍結の指定）を受け取って、モデルを作る |
+| `examples/embodiment/config/libero_10_smolvla_fpo.yaml`（新規） | `adv_type: gae`、`loss_type: actor_critic`、`clip_ratio_high` = `clip_ratio_low` = 0.01、チャンク単位の γ ≈ 0.951、λ 0.99、更新エポック 2、バッチ 128 / マイクロ 4、価値だけの最初の更新（`critic_warmup_steps`）、学習率 1e-5（方策）/ 1e-4（価値）、Task 0 のみ、3 環境、エピソード最大 400〜520 ステップ、1 更新あたりのロールアウト数 |
+| 単体テスト（新規、`tmp/` で実行） | 固定の τ、ε で、`fpo_cfm_loss` が smolVLA の学習時の損失（`policy.model.forward`）と一致すること。勾配が、アクションエキスパートと価値ヘッドだけに流れること |
+
+変更しないもの: 環境・評価の仕組み、GAE と PPO の損失のコード、runner、`embodied_fsdp_actor_worker.py`（実装時に、`logprob_type` と `logprobs` の形の扱いを確認する）。
