@@ -1,5 +1,7 @@
 # RL Token(RLT)による SmolVLA の改善実験 — LIBERO-10 Task 0
 
+**状態: 完了（2026-10-07、ユーザーの判断）。** 追加の RL Token の実験は行わない。最良は H（1 つ目の把持に固定の actor + 2 つ目専用の actor）の success_once 0.74。同じスケジュールの対照 d5ctl（0.56）との比較、オフセット報酬を使った試み（置換 0.26、critic なしの SFT 0.32、加算 0.60 / 0.52）、信頼度ゲート（0.62 → 0.42〜0.52）は、`.claude/skills/steam-rlt-hybrid/SKILL.md` に記録。未実施: 評価のシードを変えた再評価（`docs/handoff_eval_seeds_and_steam_replicates.md` の環境1への指示。取り下げ）。
+
 凍結した SmolVLA(`lerobot/smolvla_libero`)の上に、RL token と小さな actor-critic を載せ、LIBERO-10 の Task 0
 ("put both the alphabet soup and the tomato sauce in the basket")の成功率を上げる実験の記録。
 実験期間は 2026-10-01〜10-04。この文書は、実験の目的、実装、データ、各実験の設定と結果、発生した問題、考察、再現手順をまとめる。
