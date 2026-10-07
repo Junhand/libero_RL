@@ -73,3 +73,23 @@ RLinf の PPO（`embodied_fsdp_actor_worker.py`）は、`model(forward_inputs=..
 | 単体テスト（新規、`tmp/` で実行） | 固定の τ、ε で、`fpo_cfm_loss` が smolVLA の学習時の損失（`policy.model.forward`）と一致すること。勾配が、アクションエキスパートと価値ヘッドだけに流れること |
 
 変更しないもの: 環境・評価の仕組み、GAE と PPO の損失のコード、runner、`embodied_fsdp_actor_worker.py`（実装時に、`logprob_type` と `logprobs` の形の扱いを確認する）。
+
+## 10. `verl-vla/examples/rl/fpo` の確認で分かったこと（2026-10-07 追記。第 1〜9 節への訂正と補足）
+確認したファイル: `examples/rl/fpo/pi05/libero_spatial_task2_online_from_sft_step100/{run_train.sh, fpo.yaml}`、`src/verl_vla/workflows/config/train/fpo.yaml`、`.../actor/fpo_actor.yaml`。（第 1〜9 節を書いた時点では、`fpo.yaml` の先頭 60 行と、ドキュメントだけを読んでいた。）
+
+| 項目 | 内容 | 設計への影響 |
+|---|---|---|
+| 規模 | GPU 8 枚（`gpus_per_node=8`）、CPU の環境ワーカー 4 つ × 各 8 環境 = **32 環境**、`MUJOCO_GL=osmesa`（CPU 描画）、`pipeline_stage_num: 2`（環境と方策の重ね合わせ）、`max_interactions: 20`（1 軌跡 20 チャンク） | 1 更新 = 32 × 20 = **640 チャンク**。私たちの 3 環境では、1 ロールアウトが約 120〜156 チャンクなので、**約 5 ロールアウト**で 640 チャンクになる（第 5 節の「10 ロールアウト」を訂正） |
+| 学習の長さ | `total_training_steps: 50`、評価は 5 更新ごと（50 エピソード）、`val_before_train: true`、5 更新ごとに保存、`resume_mode: auto` | 30〜50 更新が目安。更新ごとの評価は、私たちの環境では重い（約 20 分）ので、間引く |
+| 出発点 | `Miical/pi05-libero-spatial-sft-step-100`（SFT を 100 step だけ行った弱い方策。成功率 58%） | 私たちのベース（成功率 0.46）と近い条件 |
+| 割引・GAE | `gamma: 0.995`（環境ステップ単位。semi-Markov）、`gae_lambda: 0.99` | チャンク単位に換算（0.995^10 ≈ 0.951）。環境ステップ数が、チャンクで一定（10）なので、等価 |
+| **アドバンテージの正規化** | `normalize_advantages: true`（分散した rollout 全体で） | **第 9 節で書き漏らした。** RLinf 側で、同等の正規化を有効にする |
+| 価値の損失 | `vf_coef: 1.0`、価値 lr 1e-4、`value_only_updates: 1`（最初の更新は価値だけ） | 設定に追加 |
+| 早期停止 | `target_kl: 0.1` | RLinf の PPO に同等の仕組みがなければ、省略するか、追加する |
+| 勾配クリップ | 方策・価値とも 25.0 | 設定に追加 |
+| 方策の lr | 1e-5、betas (0.9, 0.99)、定数スケジュール、weight decay 0 | そのまま |
+| **ロールアウトでの価値・旧損失** | `rollout.output_critic_value: false`。旧損失（L_old）、旧価値は、**学習ワーカーが、更新の前に、現在の重みで計算**する（`_forward_old_statistics`） | RLinf には、`recompute_logprobs`（学習側の forward で、`prev_logprobs` を再計算）の仕組みがある。**ロールアウトでは、τ、ε、行動、観測だけを保存し、`recompute_logprobs: True` で旧損失を再計算する**と、元の実装と一致する（第 9 節の「ロールアウトで `prev_logprobs` と `prev_values` を保存」を簡略化できる） |
+| ロールアウトの形 | `mode: async_envloop`、`trainer.async_rollout: false` | RLinf の同期のロールアウトで良い（同期のオンポリシー） |
+
+### 時間の見積もりの訂正
+- 1 更新 ≈ 5 ロールアウト（各 約 1 分、フルタスク 520 ステップ、3 環境）+ 更新の計算（アクションエキスパートのみ、2 エポック、128 のミニバッチ × 約 5）≈ **5〜8 分**。30 更新で **約 3〜4 時間**（第 6 節の「約 6 時間」より短い見込み）。ロールアウトの 1 分は、推定で、環境2 の測定（`docs/handoff_fpo_support.md` の F2）で、確かめる。
