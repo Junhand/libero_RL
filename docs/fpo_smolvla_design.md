@@ -123,3 +123,25 @@ RLinf の PPO（`embodied_fsdp_actor_worker.py`）は、`model(forward_inputs=..
 
 ### S0 の判定
 **合格。** 損失の計算は正しく（fp32）、勾配は意図どおり。次は S1（ロールアウトでの保存、価値ヘッド、`default_forward`、GAE、1 回の更新の動作確認）。
+
+## 12. S1: RLinf への組み込みと 2 更新の動作確認（2026-10-07）
+
+### 実装（`patches/rlinf/smolvla-zzz-fpo.patch`）
+パッチは、ほかのパッチの後に適用する必要があるため、名前を `smolvla-zzz-fpo.patch` にした（`smolvla-aa-fpo.patch` は廃止）。クリーンな RLinf（基準コミット）に、全パッチを順に当てて適用できることと、開発用コピーとの一致を確認した。
+- `smolvla/fpo.py`: CFM 損失（S0）。プレフィックスの特徴量（プール）を返す `return_features` を追加。
+- `smolvla/smolvla_fpo_model.py`（新規）: `SmolVLAForFPO`。fp32、価値ヘッド、`predict_action_batch`（τ・ε の保存、旧損失と旧価値の計算）、`default_forward`（再計算した損失から `logprobs=L_old−L_new` 相当の値と、価値を返す）。学習対象は lm_expert と action 系の層と価値ヘッド（100.5M / 450.7M）。
+- `smolvla/__init__.py`: `fpo` 分岐。`embodied_fsdp_actor_worker.py`: `algorithm.logprob_last_dim` で、token_level の最終次元を指定可能に。
+- `examples/embodiment/config/libero_10_smolvla_fpo.yaml`（新規）。
+
+### モデル単体の確認
+ロールアウト時と再計算時の損失の差は 0。勾配は意図どおり。
+
+### 2 更新のスモークテスト（3 環境、rollout_epoch 1、gbs 52、micro 13、critic_warmup 1）
+ロールアウト → GAE → 損失 → 最適化 → 重みの同期（actor→rollout）が、最後まで通った（exit=0）。
+- 設定の落とし穴: `value_clip: null` だと損失の計算で落ちる（`-value_clip`）。大きな値（1000）にして実質無効にした。`use_orig_params: True` と `add_value_head: True` が必要。価値ヘッドの状態の次元は 8（チェックポイントの記載の 6 ではない）。
+- 2 更新目の指標: approx_kl 0.009、clip_fraction 0.21、grad_norm 1.6、ratio 0.992。
+
+### 未確認（S2 で確認）
+- 最初のミニバッチで ratio≈1 になっているか、更新ごとのクリップ率の推移。
+- auto_reset False のとき、エピソード終了後のステップの loss_mask の扱い。
+- ロールアウトの時間とメモリ（本番の規模）。

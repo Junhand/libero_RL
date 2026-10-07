@@ -1,0 +1,518 @@
+--- a/rlinf/models/embodiment/smolvla/__init__.py
++++ b/rlinf/models/embodiment/smolvla/__init__.py
+@@ -158,6 +158,18 @@
+             ),
+         }
+ 
++    fpo_cfg = model_cfg.get("fpo", None)
++    if fpo_cfg is not None and bool(fpo_cfg.get("enabled", False)):
++        # Vanilla Flow Policy Optimization (PPO with the CFM loss as log-likelihood); see smolvla_fpo_model.py.
++        from rlinf.models.embodiment.smolvla.smolvla_fpo_model import SmolVLAForFPO
++
++        wrapper_cls = SmolVLAForFPO
++        rlt_kwargs = {
++            "n_action_samples": int(fpo_cfg.get("n_action_samples", 4)),
++            "value_hidden_dims": tuple(int(d) for d in fpo_cfg.get("value_hidden_dims", (512, 256))),
++            "state_dim": int(fpo_cfg.get("state_dim", 8)),
++        }
++
+     return wrapper_cls(
+         policy,
+         **rlt_kwargs,
+--- a/rlinf/workers/actor/embodied_fsdp_actor_worker.py
++++ b/rlinf/workers/actor/embodied_fsdp_actor_worker.py
+@@ -753,7 +753,9 @@
+             "loss_type": self.cfg.algorithm.loss_type,
+             "logprob_type": self.cfg.algorithm.logprob_type,
+             "reward_type": self.cfg.algorithm.reward_type,
+-            "single_action_dim": self.cfg.actor.model.get("action_dim", 7),
++            # FPO: logprobs are [B, steps, n_action_samples], not [B, chunk, action_dim].
++            "single_action_dim": self.cfg.algorithm.get("logprob_last_dim", None)
++            or self.cfg.actor.model.get("action_dim", 7),
+             "logprobs": output_dict["logprobs"],
+             "values": output_dict.get("values", None),
+             "old_logprobs": prev_logprobs,
+--- /dev/null
++++ b/rlinf/models/embodiment/smolvla/fpo.py
+@@ -0,0 +1,108 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Flow Policy Optimization (vanilla FPO, arXiv:2507.21053) for SmolVLA.
++
++The conditional flow-matching (CFM) loss of a sampled action chunk, evaluated with fixed flow times and
++noise, replaces the log-likelihood in a PPO surrogate: ``log_ratio = L_old - L_new``. This module only holds
++the SmolVLA specific part (the CFM loss); the reference implementation of the rest is verl-vla
++(``src/verl_vla/workers/engine/fpo/training_worker.py``, ``models/pi0_torch/trainable_model.py``).
++"""
++
++import torch
++import torch.nn.functional as F
++
++
++def _repeat_kv_cache(past_key_values, repeats: int):
++    """Repeat every layer of a ``DynamicCache`` ``repeats`` times along the batch dimension."""
++    from transformers import DynamicCache
++
++    repeated = DynamicCache()
++    for layer_idx, layer in enumerate(past_key_values.layers):
++        repeated.update(
++            layer.keys.repeat_interleave(repeats, dim=0),
++            layer.values.repeat_interleave(repeats, dim=0),
++            layer_idx,
++        )
++    return repeated
++
++
++def smolvla_fpo_cfm_loss(
++    model,
++    images,
++    img_masks,
++    lang_tokens,
++    lang_masks,
++    state,
++    actions: torch.Tensor,
++    timesteps: torch.Tensor,
++    noise: torch.Tensor,
++    *,
++    action_dim: int,
++    num_steps: int,
++    train_vlm: bool = False,
++    return_features: bool = False,
++):
++    """Unreduced CFM losses ``[B, num_steps, N]`` of ``N`` (time, noise) samples per action chunk.
++
++    Args:
++        model: lerobot ``VLAFlowMatching`` (``policy.model``).
++        images, img_masks, lang_tokens, lang_masks, state: model inputs (as in ``policy.forward``).
++        actions: ``[B, chunk, max_action_dim]`` normalised chunk, padded with zeros (as in SFT).
++        timesteps: ``[B, N]`` flow times in (0, 1).
++        noise: ``[B, N, chunk, max_action_dim]`` standard-normal noise.
++        action_dim: number of real action dimensions (padding dimensions are not part of the ratio).
++        num_steps: number of leading action steps that enter the loss (the executed ones).
++        train_vlm: if False the image/language prefix is computed without gradients.
++        return_features: also return the mask-pooled final-layer VLM prefix hidden states ``[B, hidden]``
++            (the input of the value head), computed without gradients.
++    """
++    from lerobot.policies.smolvla.modeling_smolvla import make_att_2d_masks
++
++    if timesteps.ndim != 2 or noise.ndim != 4:
++        raise ValueError(f"timesteps must be [B, N] and noise [B, N, C, D]; got {tuple(timesteps.shape)}, {tuple(noise.shape)}")
++    batch_size, n_samples = timesteps.shape
++
++    ctx = torch.enable_grad() if train_vlm else torch.no_grad()
++    with ctx:
++        prefix_embs, prefix_pad_masks, prefix_att_masks = model.embed_prefix(
++            images, img_masks, lang_tokens, lang_masks, state=state
++        )
++        prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks)
++        prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1
++        prefix_outs, past_key_values = model.vlm_with_expert.forward(
++            attention_mask=prefix_att_2d_masks,
++            position_ids=prefix_position_ids,
++            past_key_values=None,
++            inputs_embeds=[prefix_embs, None],
++            use_cache=True,
++        )
++        features = None
++        if return_features:
++            mask = prefix_pad_masks.to(prefix_outs[0].dtype).unsqueeze(-1)
++            features = ((prefix_outs[0] * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)).detach().float()
++    past_key_values = _repeat_kv_cache(past_key_values, n_samples)
++
++    rep = lambda x: x.repeat_interleave(n_samples, dim=0)  # noqa: E731  ([B, ...] -> [B*N, ...], index b*N + n)
++    a = rep(actions).to(torch.float32)
++    t = timesteps.reshape(-1).to(device=a.device, dtype=torch.float32)
++    eps = noise.reshape(batch_size * n_samples, *noise.shape[2:]).to(device=a.device, dtype=torch.float32)
++    x_t = t[:, None, None] * eps + (1.0 - t[:, None, None]) * a
++    target_velocity = eps - a
++
++    v_t = model.denoise_step(rep(prefix_pad_masks), past_key_values, x_t, t)
++    loss = F.mse_loss(v_t[:, :num_steps, :action_dim], target_velocity[:, :num_steps, :action_dim], reduction="none")
++    loss = loss.mean(dim=-1)  # [B*N, num_steps]
++    loss = loss.reshape(batch_size, n_samples, num_steps).permute(0, 2, 1)
++    return (loss, features) if return_features else loss
+--- /dev/null
++++ b/rlinf/models/embodiment/smolvla/smolvla_fpo_model.py
+@@ -0,0 +1,189 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""SmolVLA for vanilla Flow Policy Optimization (FPO, arXiv:2507.21053) in RLinf's embodied PPO.
++
++Mapping onto RLinf's PPO (``loss_type: actor_critic``, ``logprob_type: token_level``):
++  * ``logprobs``     = ``-CFM loss`` of ``N`` fixed (time, noise) samples per executed action step, ``[B, H * N]``.
++                       ``old_logprobs`` come from the rollout (same weights, same fixed samples), so
++                       ``ratio = exp(L_old - L_new)`` per (step, sample), as in verl-vla's FPO.
++  * ``values``       = MLP value head over the mean-pooled final-layer VLM prefix and the robot state.
++  * trainable        = action expert, action input/output projections and time MLP, value head. The VLM
++                       (including ``state_proj``, which is part of the prefix) is frozen.
++The whole policy runs in fp32: in bf16 the CFM loss has a noise floor (~4e-3) comparable to FPO's clip radius.
++"""
++
++from __future__ import annotations
++
++from typing import Any, Literal
++
++import torch
++from torch import nn
++
++from rlinf.models.embodiment.base_policy import ForwardType
++from rlinf.models.embodiment.pi0_fast.lerobot_io import build_lerobot_batch_from_env_obs
++from rlinf.models.embodiment.smolvla.fpo import smolvla_fpo_cfm_loss
++from rlinf.models.embodiment.smolvla.smolvla_action_model import (
++    SmolVLAForRLActionPrediction,
++)
++
++
++class SmolVLAForFPO(SmolVLAForRLActionPrediction):
++    def __init__(
++        self,
++        policy: nn.Module,
++        *,
++        n_action_samples: int = 4,
++        value_hidden_dims: tuple[int, ...] = (512, 256),
++        state_dim: int = 8,
++        **kwargs: Any,
++    ) -> None:
++        super().__init__(policy, **kwargs)
++        self.n_action_samples = int(n_action_samples)
++        self.policy.float()
++        model = self.policy.model
++        config = self.policy.config
++        d_model = int(model.vlm_with_expert.config.text_config.hidden_size)
++        # The robot state fed to the value head is the (normalised) env proprioception, 8-d in LIBERO
++        # (the checkpoint's `robot_state_feature` says 6).
++        state_dim = int(state_dim)
++        dims = [d_model + state_dim, *[int(d) for d in value_hidden_dims]]
++        layers: list[nn.Module] = []
++        for d_in, d_out in zip(dims[:-1], dims[1:]):
++            layers += [nn.Linear(d_in, d_out), nn.ReLU()]
++        layers.append(nn.Linear(dims[-1], 1))
++        self.value_head = nn.Sequential(*layers)  # the name selects the value learning rate
++
++        for parameter in self.policy.parameters():
++            parameter.requires_grad = False
++        trainable = [
++            model.vlm_with_expert.lm_expert,
++            model.action_in_proj,
++            model.action_out_proj,
++            model.action_time_mlp_in,
++            model.action_time_mlp_out,
++        ]
++        for module in trainable:
++            for parameter in module.parameters():
++                parameter.requires_grad = True
++
++    # ------------------------------------------------------------------ inputs
++    def _model_inputs(self, batch: dict[str, Any]):
++        from lerobot.utils.constants import (
++            OBS_LANGUAGE_ATTENTION_MASK,
++            OBS_LANGUAGE_TOKENS,
++        )
++
++        images, img_masks = self.policy.prepare_images(batch)
++        state = self.policy.prepare_state(batch)
++        return images, img_masks, batch[OBS_LANGUAGE_TOKENS], batch[OBS_LANGUAGE_ATTENTION_MASK], state
++
++    def _value(self, features: torch.Tensor, batch: dict[str, Any]) -> torch.Tensor:
++        state = batch["observation.state"].to(features.dtype)
++        return self.value_head(torch.cat([features, state], dim=-1)).squeeze(-1).float()
++
++    # ----------------------------------------------------------------- rollout
++    @torch.no_grad()
++    def predict_action_batch(
++        self,
++        env_obs: dict[str, Any],
++        mode: Literal["train", "eval"] = "train",
++        **kwargs: Any,
++    ) -> tuple[torch.Tensor, dict[str, Any]]:
++        if mode == "eval":
++            return super().predict_action_batch(env_obs, mode=mode, **kwargs)
++        from lerobot.utils.constants import (
++            OBS_LANGUAGE_ATTENTION_MASK,
++            OBS_LANGUAGE_TOKENS,
++        )
++
++        batch = build_lerobot_batch_from_env_obs(env_obs, image_size=self.image_size)
++        batch = self._prepare_lerobot_batch(batch)
++        config = self.policy.config
++        chunk, max_dim = int(config.chunk_size), int(config.max_action_dim)
++        normalized = self.policy.predict_action_chunk(batch, noise=self._sample_noise(batch))  # [B, chunk, action_dim]
++        batch_size = normalized.shape[0]
++        act_pad = torch.zeros(batch_size, chunk, max_dim, device=normalized.device, dtype=torch.float32)
++        act_pad[:, :, : self.action_dim] = normalized[:, :chunk, : self.action_dim].float()
++
++        num_steps, n = self.num_action_chunks, self.n_action_samples
++        timesteps = torch.rand(batch_size, n, device=act_pad.device)
++        noise = torch.randn(batch_size, n, chunk, max_dim, device=act_pad.device)
++        images, img_masks, lang_tokens, lang_masks, state = self._model_inputs(batch)
++        loss, features = smolvla_fpo_cfm_loss(
++            self.policy.model, images, img_masks, lang_tokens, lang_masks, state, act_pad, timesteps, noise,
++            action_dim=self.action_dim, num_steps=num_steps, return_features=True,
++        )
++        prev_logprobs = (-loss).reshape(batch_size, -1).float().cpu()
++        prev_values = self._value(features, batch).reshape(batch_size, 1).cpu()
++
++        actions = normalized[:, :num_steps, : self.action_dim].float().cpu()
++        if self.postprocessor is not None:
++            actions = self.postprocessor(actions)
++        forward_inputs = {
++            "main_images": env_obs["main_images"].cpu(),
++            "wrist_images": env_obs["wrist_images"].cpu(),
++            "states": env_obs["states"].float().cpu(),
++            "lang_tokens": batch[OBS_LANGUAGE_TOKENS].cpu(),
++            "lang_masks": batch[OBS_LANGUAGE_ATTENTION_MASK].cpu(),
++            "act_pad": act_pad.reshape(batch_size, -1).cpu(),
++            "fpo_timesteps": timesteps.cpu(),
++            "fpo_noise": noise.cpu(),
++            "action": actions.reshape(batch_size, -1).float(),
++        }
++        return actions, {
++            "prev_logprobs": prev_logprobs,
++            "prev_values": prev_values,
++            "forward_inputs": forward_inputs,
++        }
++
++    # ---------------------------------------------------------------- training
++    def forward(self, forward_type=ForwardType.DEFAULT, **kwargs):
++        if forward_type == ForwardType.DEFAULT:
++            return self.default_forward(**kwargs)
++        return super().forward(forward_type, **kwargs)
++
++    def default_forward(self, forward_inputs: dict[str, torch.Tensor], **kwargs: Any) -> dict[str, torch.Tensor]:
++        """Recompute ``logprobs`` (= -CFM loss of the stored samples) and ``values`` for the stored rollout."""
++        from lerobot.utils.constants import (
++            OBS_LANGUAGE_ATTENTION_MASK,
++            OBS_LANGUAGE_TOKENS,
++        )
++
++        device = next(self.parameters()).device
++        batch_size = forward_inputs["states"].shape[0]
++        obs = {
++            "main_images": forward_inputs["main_images"],
++            "wrist_images": forward_inputs["wrist_images"],
++            "states": forward_inputs["states"],
++            "task_descriptions": [""] * batch_size,  # tokens are restored from the rollout below
++        }
++        batch = self._prepare_lerobot_batch(build_lerobot_batch_from_env_obs(obs, image_size=self.image_size))
++        batch[OBS_LANGUAGE_TOKENS] = forward_inputs["lang_tokens"].to(device)
++        batch[OBS_LANGUAGE_ATTENTION_MASK] = forward_inputs["lang_masks"].to(device)
++        config = self.policy.config
++        chunk, max_dim = int(config.chunk_size), int(config.max_action_dim)
++        act_pad = forward_inputs["act_pad"].to(device).reshape(batch_size, chunk, max_dim).float()
++        timesteps = forward_inputs["fpo_timesteps"].to(device).float()
++        noise = forward_inputs["fpo_noise"].to(device).float()
++        images, img_masks, lang_tokens, lang_masks, state = self._model_inputs(batch)
++        loss, features = smolvla_fpo_cfm_loss(
++            self.policy.model, images, img_masks, lang_tokens, lang_masks, state, act_pad, timesteps, noise,
++            action_dim=self.action_dim, num_steps=self.num_action_chunks, return_features=True,
++        )
++        return {
++            "logprobs": (-loss).reshape(batch_size, -1).float(),
++            "values": self._value(features, batch),
++            "entropy": torch.zeros(batch_size, 1, device=device, dtype=torch.float32),
++        }
+--- /dev/null
++++ b/examples/embodiment/config/libero_10_smolvla_fpo.yaml
+@@ -0,0 +1,178 @@
++# Vanilla Flow Policy Optimization (FPO, arXiv:2507.21053) for SmolVLA on LIBERO-10 Task 0.
++# PPO with the conditional flow-matching loss of N fixed (time, noise) samples as the log-likelihood (see
++# rlinf/models/embodiment/smolvla/smolvla_fpo_model.py and docs/fpo_smolvla_design.md).
++#   bash: cd tmp/rlinf_dev; python examples/embodiment/train_embodied_agent.py --config-name libero_10_smolvla_fpo \
++#     actor.model.model_path=/path/to/smolvla_libero actor.model.smolvla.vlm_model_name=/path/to/SmolVLM2-500M-Video-Instruct
++defaults:
++  - env/libero_10@env.train
++  - env/libero_10@env.eval
++  - hybrid_engines/fsdp@actor.fsdp_config
++  - weight_syncer/patch_syncer@weight_syncer
++  - override hydra/job_logging: stdout
++
++hydra:
++  run:
++    dir: .
++  output_subdir: null
++  searchpath:
++    - file://${oc.env:EMBODIED_PATH}/config/
++
++cluster:
++  num_nodes: 1
++  component_placement:
++    actor,env,rollout: all
++
++runner:
++  task_type: embodied
++  logger:
++    log_path: "../results"
++    project_name: rlinf
++    experiment_name: "libero_10_smolvla_fpo"
++    logger_backends: ["tensorboard"]
++
++  max_epochs: 40 # number of PPO updates
++  max_steps: -1
++  only_eval: False
++  val_check_interval: -1
++  save_interval: 5
++  resume_dir: null
++  ckpt_path: null
++
++algorithm:
++  normalize_advantages: True
++  group_size: 1
++  reward_coef: 1.0
++
++  reward_type: chunk_level
++  logprob_type: token_level   # ratio per (action step, CFM sample), as in FPO
++  logprob_last_dim: 4         # = n_action_samples (actor.model.smolvla.fpo.n_action_samples)
++  entropy_type: token_level
++  update_epoch: 2
++  adv_type: gae
++  loss_type: actor_critic
++  loss_agg_func: "token-mean"
++  kl_beta: 0.0
++  entropy_bonus: 0
++  clip_ratio_high: 0.01       # FPO clip radius
++  clip_ratio_low: 0.01
++  clip_ratio_c: null
++  value_clip: 1000.0          # effectively no value clipping (FPO has none)
++  huber_delta: 10.0
++
++  gamma: 0.951                # 0.995 ** 10 (per action chunk of 10 environment steps)
++  gae_lambda: 0.99
++
++  filter_rewards: False
++
++env:
++  group_name: "EnvGroup"
++  train:
++    task_id_filter: [0]
++    rollout_epoch: 5          # episodes per environment per update
++    total_num_envs: 3
++    seed: 2026
++    auto_reset: False
++    ignore_terminations: False
++    use_fixed_reset_state_ids: False
++    use_ordered_reset_state_ids: False
++    use_rel_reward: False
++    reward_coef: ${algorithm.reward_coef}
++    max_episode_steps: 520
++    max_steps_per_rollout_epoch: 520
++    group_size: 1
++    skip_intermediate_renders: True
++    video_cfg:
++      save_video: False
++  eval:
++    task_id_filter: [0]
++    rollout_epoch: 1
++    total_num_envs: 2
++    seed: 2026
++    auto_reset: True
++    ignore_terminations: True
++    use_rel_reward: False
++    reward_coef: 1.0
++    max_episode_steps: 520
++    max_steps_per_rollout_epoch: 13000
++    group_size: 1
++    use_fixed_reset_state_ids: True
++    is_eval: True
++    video_cfg:
++      save_video: False
++
++rollout:
++  group_name: "RolloutGroup"
++  generation_backend: "huggingface"
++  recompute_logprobs: False
++  enable_offload: False
++  pipeline_stage_num: 1
++  collect_prev_infos: True
++
++  model:
++    model_type: ${actor.model.model_type}
++    model_path: ${actor.model.model_path}
++    precision: ${actor.model.precision}
++    add_value_head: ${actor.model.add_value_head}
++    action_dim: ${actor.model.action_dim}
++    num_action_chunks: ${actor.model.num_action_chunks}
++    is_lora: False
++    smolvla: ${actor.model.smolvla}
++
++actor:
++  group_name: "ActorGroup"
++  training_backend: "fsdp"
++  micro_batch_size: 10
++  global_batch_size: 130      # rollout entries per update (52 chunk steps x 3 envs x 5 epochs = 780) must be divisible by this
++  seed: 1234
++  enable_offload: False
++
++  model:
++    model_type: "smolvla"
++    model_path: "/path/to/smolvla_libero"
++    precision: fp32
++    add_value_head: True        # required by loss_type actor_critic; the value head itself lives in SmolVLAForFPO
++    action_dim: 7
++    num_action_chunks: 10
++    is_lora: False
++    smolvla:
++      vlm_model_name: "/path/to/SmolVLM2-500M-Video-Instruct"
++      noise_seed: null          # random initial flow noise: the exploration of FPO
++      chunk_size: 50
++      advantage_prompt: False
++      rename_map:
++        observation.images.image: observation.images.camera1
++        observation.images.image2: observation.images.camera2
++      fpo:
++        enabled: True
++        n_action_samples: 4
++        value_hidden_dims: [512, 256]
++        state_dim: 8
++
++  optim:
++    lr: 1.0e-5
++    value_lr: 1.0e-4
++    adam_beta1: 0.9
++    adam_beta2: 0.99
++    adam_eps: 1.0e-08
++    weight_decay: 0.0
++    clip_grad: 25.0
++    critic_warmup_steps: 12     # optimizer steps of the first update (value only): 6 mini-batches x 2 epochs
++    total_training_steps: 40
++    min_lr_rate: 1.0
++    lr_scheduler: "constant"
++
++  fsdp_config:
++    strategy: "fsdp"
++    sharding_strategy: "no_shard"
++    use_orig_params: True       # frozen (VLM) and trainable (expert, value head) parameters share FSDP units
++    gradient_checkpointing: False
++    mixed_precision:
++      param_dtype: ${actor.model.precision}
++      reduce_dtype: ${actor.model.precision}
++      buffer_dtype: ${actor.model.precision}
++
++reward:
++  use_reward_model: False
++
++critic:
++  use_critic_model: False
