@@ -1,6 +1,6 @@
 --- a/rlinf/models/embodiment/smolvla/__init__.py
 +++ b/rlinf/models/embodiment/smolvla/__init__.py
-@@ -158,6 +158,31 @@
+@@ -158,6 +158,32 @@
              ),
          }
  
@@ -25,6 +25,7 @@
 +        rlt_kwargs = {
 +            "noise_level": float(sde_cfg.get("noise_level", 0.5)),
 +            "num_steps": (int(sde_cfg.num_steps) if sde_cfg.get("num_steps") is not None else None),
++            "prefix_bf16": bool(sde_cfg.get("prefix_bf16", False)),
 +            "value_hidden_dims": tuple(int(d) for d in sde_cfg.get("value_hidden_dims", (512, 256))),
 +            "state_dim": int(sde_cfg.get("state_dim", 8)),
 +        }
@@ -34,7 +35,77 @@
          **rlt_kwargs,
 --- a/rlinf/workers/actor/embodied_fsdp_actor_worker.py
 +++ b/rlinf/workers/actor/embodied_fsdp_actor_worker.py
-@@ -624,7 +624,9 @@
+@@ -425,10 +425,12 @@
+ 
+         rollout_logprobs = self.rollout_batch["prev_logprobs"]
+         rollout_size = rollout_logprobs.shape[0]
+-        kwargs = {
+-            "temperature": self.cfg.rollout.sampling_params.temperature_train,
+-            "top_k": self.cfg.rollout.sampling_params.top_k,
+-        }
++        kwargs = {}
++        if SupportedModel(self.cfg.actor.model.model_type) != SupportedModel.SMOLVLA:
++            kwargs = {
++                "temperature": self.cfg.rollout.sampling_params.temperature_train,
++                "top_k": self.cfg.rollout.sampling_params.top_k,
++            }
+ 
+         recomputed_logprobs = []
+         with torch.no_grad():
+@@ -531,6 +533,20 @@
+             self.sft_iterator = iter(self.data_loader)
+             self.train_epoch = 0
+             self.sft_loss_weight = self.cfg.actor.get("sft_loss_weight", 0.1)
++        elif SupportedModel(self.cfg.actor.model.model_type) == SupportedModel.SMOLVLA:
++            from rlinf.data.datasets.smolvla_sft import build_smolvla_demo_dataloader
++
++            sft_data_path = self.cfg.actor.get("sft_data_path")
++            if not sft_data_path:
++                raise ValueError(
++                    "actor.sft_data_path must be set to a LeRobot dataset root when enable_sft_co_train=True."
++                )
++            self.data_loader = build_smolvla_demo_dataloader(
++                self.cfg, str(sft_data_path), seed=int(self.cfg.actor.seed) + self._rank
++            )
++            self.sft_iterator = iter(self.data_loader)
++            self.train_epoch = 0
++            self.sft_loss_weight = self.cfg.actor.get("sft_loss_weight", 0.1)
+         else:
+             raise KeyError(
+                 f"not support such model type {self.cfg.actor.model.model_type} for SFT right now."
+@@ -545,18 +561,24 @@
+         metrics_data["ppo_loss"] = loss.clone().detach().item()
+ 
+         # Get next data batch
++        smolvla = SupportedModel(self.cfg.actor.model.model_type) == SupportedModel.SMOLVLA
+         try:
+-            observation, actions = next(self.sft_iterator)
++            sft_batch = next(self.sft_iterator)
+         except StopIteration:
+             self.train_epoch += 1
+-            self.data_loader.set_epoch(self.train_epoch)
++            if hasattr(self.data_loader, "set_epoch"):
++                self.data_loader.set_epoch(self.train_epoch)
+             self.sft_iterator = iter(self.data_loader)
+-            observation, actions = next(self.sft_iterator)
++            sft_batch = next(self.sft_iterator)
+ 
+-        sft_loss = self.model(
+-            data=(observation, actions),
+-            forward_type=ForwardType.SFT,
+-        )
++        if smolvla:
++            sft_loss = self.model(data=sft_batch, forward_type=ForwardType.SFT)["loss"]
++        else:
++            observation, actions = sft_batch
++            sft_loss = self.model(
++                data=(observation, actions),
++                forward_type=ForwardType.SFT,
++            )
+         metrics_data["sft_loss"] = sft_loss.detach().item()
+         total_loss = loss + self.sft_loss_weight * sft_loss
+         loss = total_loss
+@@ -624,7 +646,9 @@
          if self.cfg.algorithm.get("recompute_logprobs", False):
              append_to_dict(metrics, self.recompute_prev_logprobs(batch_size_per_rank))
          update_epoch = self.cfg.algorithm.get("update_epoch", 1)
@@ -44,7 +115,7 @@
              rollout_dataloader_iter = split_dict_to_chunk(
                  self.rollout_batch,
                  rollout_size // batch_size_per_rank,
-@@ -667,6 +669,16 @@
+@@ -667,6 +691,16 @@
                  if len(lr_list) > 1:
                      data["critic/lr"] = lr_list[1]
                  append_to_dict(metrics, data)
@@ -61,7 +132,7 @@
          # put LR scheduler step here
          self.lr_scheduler.step()
          self.optimizer.zero_grad()
-@@ -753,7 +765,9 @@
+@@ -753,7 +787,9 @@
              "loss_type": self.cfg.algorithm.loss_type,
              "logprob_type": self.cfg.algorithm.logprob_type,
              "reward_type": self.cfg.algorithm.reward_type,
@@ -160,6 +231,168 @@
          except BaseException as e:
              import traceback
  
+--- a/rlinf/config.py
++++ b/rlinf/config.py
+@@ -94,7 +94,6 @@
+ SupportedModel.STARVLA = SupportedModel.register("starvla", force=True)
+ SupportedModel.MLP_POLICY = SupportedModel.register("mlp_policy", force=True)
+ SupportedModel.RLT_MLP_POLICY = SupportedModel.register("rlt_mlp_policy", force=True)
+-SupportedModel.DSRL_MLP_POLICY = SupportedModel.register("dsrl_mlp_policy", force=True)
+ SupportedModel.RLT_TD3_MLP_POLICY = SupportedModel.register(
+     "rlt_td3_mlp_policy", force=True
+ )
+@@ -143,7 +142,6 @@
+         SupportedModel.STARVLA,
+         SupportedModel.MLP_POLICY,
+         SupportedModel.RLT_MLP_POLICY,
+-        SupportedModel.DSRL_MLP_POLICY,
+         SupportedModel.RLT_TD3_MLP_POLICY,
+         SupportedModel.GR00T,
+         SupportedModel.DEXBOTIC_PI,
+@@ -1052,9 +1050,15 @@
+         # The actor-side recompute reshapes logprobs by ``action_dim`` to report the
+         # gap per action, which assumes the OpenVLA family's tokenized action layout.
+         # GR00T needs no recompute: it already rescores inside its training forward.
+-        assert model_type in [SupportedModel.OPENVLA, SupportedModel.OPENVLA_OFT], (
++        # SmolVLA (Flow-SDE PPO) reports ``[B, num_action_chunks * action_dim]`` logprobs, which reshape the same way.
++        recompute_models = [
++            SupportedModel.OPENVLA,
++            SupportedModel.OPENVLA_OFT,
++            SupportedModel.SMOLVLA,
++        ]
++        assert model_type in recompute_models, (
+             f"algorithm.recompute_logprobs supports "
+-            f"{[SupportedModel.OPENVLA.value, SupportedModel.OPENVLA_OFT.value]}, "
++            f"{[m.value for m in recompute_models]}, "
+             f"got '{model_cfg.model_type}'."
+         )
+         assert algorithm_cfg.get("adv_type", None) != "opd", (
+--- a/rlinf/envs/sim/libero/libero_env.py
++++ b/rlinf/envs/sim/libero/libero_env.py
+@@ -180,6 +180,19 @@
+ 
+         self._init_rlt_policy_switch()
+         self.prev_step_reward = np.zeros(self.num_envs)
++        # Optional shaping: a one-off bonus each time a target object is first grasped and lifted
++        # (cfg.grasp_reward: {objects: [...], rewards: [...], lift_height}); the n-th object grasped earns rewards[n].
++        grasp_cfg = cfg.get("grasp_reward", None)
++        self.grasp_objects = []
++        if grasp_cfg is not None and bool(grasp_cfg.get("enabled", False)):
++            self.grasp_objects = list(grasp_cfg.objects)
++            self.grasp_rewards = [float(r) for r in grasp_cfg.rewards]
++            assert len(self.grasp_rewards) == len(self.grasp_objects)
++            self.grasp_lift = float(grasp_cfg.get("lift_height", 0.02))
++            k = len(self.grasp_objects)
++            self.grasp_seen = np.zeros((self.num_envs, k), dtype=bool)
++            self.grasp_init_z = np.full((self.num_envs, k), np.nan)
++            self.grasp_count = np.zeros(self.num_envs, dtype=np.int64)
+         self.use_rel_reward = cfg.use_rel_reward
+         self.use_step_penalty = getattr(cfg, "use_step_penalty", False)
+ 
+@@ -842,6 +855,10 @@
+             mask = np.zeros(self.num_envs, dtype=bool)
+             mask[env_idx] = True
+             self.prev_step_reward[mask] = 0.0
++            if self.grasp_objects:
++                self.grasp_seen[mask] = False
++                self.grasp_init_z[mask] = np.nan
++                self.grasp_count[mask] = 0
+             self.success_once[mask] = False
+             self.fail_once[mask] = False
+             self.returns[mask] = 0
+@@ -849,12 +866,33 @@
+             self._elapsed_steps[env_idx] = 0
+         else:
+             self.prev_step_reward[:] = 0
++            if self.grasp_objects:
++                self.grasp_seen[:] = False
++                self.grasp_init_z[:] = np.nan
++                self.grasp_count[:] = 0
+             self.success_once[:] = False
+             self.fail_once[:] = False
+             self.returns[:] = 0.0
+             self.success_episode_len[:] = 0
+             self._elapsed_steps[:] = 0
+ 
++    def _grasp_bonus(self):
++        """One-off bonus per environment for each target object grasped (and lifted) for the first time."""
++        bonus = np.zeros(self.num_envs)
++        if not self.grasp_objects:
++            return bonus
++        status = self.env.grasp_status(self.grasp_objects)  # [N, K, 2]
++        grasped, height = status[..., 0] > 0.5, status[..., 1]
++        first_step = self._elapsed_steps == 1
++        self.grasp_init_z[first_step] = height[first_step]  # the objects have barely moved after one step
++        lifted = grasped & (height - self.grasp_init_z >= self.grasp_lift)
++        new = lifted & ~self.grasp_seen
++        for env_id, obj_id in zip(*np.nonzero(new)):
++            bonus[env_id] += self.grasp_rewards[min(self.grasp_count[env_id], len(self.grasp_rewards) - 1)]
++            self.grasp_count[env_id] += 1
++        self.grasp_seen |= new
++        return bonus
++
+     def _record_metrics(self, step_reward, terminations, infos):
+         episode_info = {}
+         # Only accumulate returns while not yet succeeded
+@@ -868,6 +906,8 @@
+ 
+         self.success_once = self.success_once | terminations
+         episode_info["success_once"] = self.success_once.copy()
++        if self.grasp_objects:
++            episode_info["grasp_count"] = self.grasp_count.copy()
+         episode_info["return"] = self.returns.copy()
+         episode_info["episode_len"] = self.elapsed_steps.copy()
+ 
+@@ -1055,6 +1095,8 @@
+             step_reward = self._calc_step_reward(first_success)
+         else:
+             step_reward = self._calc_step_reward(terminations)
++        if self.grasp_objects:
++            step_reward = step_reward + self._grasp_bonus()
+ 
+         infos = self._record_metrics(step_reward, terminations, infos)
+         if self.ignore_terminations:
+--- a/rlinf/envs/sim/libero/venv.py
++++ b/rlinf/envs/sim/libero/venv.py
+@@ -221,6 +221,22 @@
+                         depth=depth,
+                     )
+                 )
++            elif cmd == "grasp_status":
++                # (grasped, height) of each named object: robosuite's contact-based grasp check of the gripper.
++                rob = getattr(env, "env", env)
++                while hasattr(rob, "env"):
++                    rob = rob.env
++                gripper = rob.robots[0].gripper
++                status = []
++                for name in data["names"]:
++                    grasped = bool(
++                        rob._check_grasp(
++                            gripper=gripper, object_geoms=rob.objects_dict[name]
++                        )
++                    )
++                    height = float(rob.sim.data.body_xpos[rob.obj_body_id[name]][2])
++                    status.append((grasped, height))
++                p.send(status)
+             elif cmd == "set_camera_rendering":
+                 _set_camera_rendering(env, data)
+                 p.send(None)
+@@ -284,3 +300,15 @@
+             self.workers[i].parent_remote.send(["set_camera_rendering", enabled])
+         for i in id:
+             self.workers[i].parent_remote.recv()
++
++    def grasp_status(self, names, id=None):
++        """``[len(id), len(names), 2]`` array of (grasped, object height) from every environment process."""
++        self._assert_is_not_closed()
++        id = self._wrap_id(id)
++        if self.is_async:
++            self._assert_id(id)
++        for i in id:
++            self.workers[i].parent_remote.send(["grasp_status", {"names": list(names)}])
++        return np.asarray(
++            [self.workers[i].parent_remote.recv() for i in id], dtype=np.float64
++        )
 --- /dev/null
 +++ b/rlinf/models/embodiment/smolvla/fpo.py
 @@ -0,0 +1,108 @@
@@ -471,7 +704,7 @@
 +        }
 --- /dev/null
 +++ b/rlinf/models/embodiment/smolvla/sde.py
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,106 @@
 +# Copyright 2026 The RLinf Authors.
 +#
 +# Licensed under the Apache License, Version 2.0 (the "License");
@@ -495,6 +728,7 @@
 +log-probability of the stochastic step is the exact likelihood of the resulting action.
 +"""
 +
++import contextlib
 +import math
 +
 +import torch
@@ -543,15 +777,18 @@
 +    return torch.where(mask, torch.zeros_like(log_prob), log_prob)
 +
 +
-+def prefix_cache(model, images, img_masks, lang_tokens, lang_masks, state):
++def prefix_cache(model, images, img_masks, lang_tokens, lang_masks, state, bf16: bool = False):
 +    """Image/language/state prefix of ``VLAFlowMatching`` -> ``(pooled features [B, hidden], pad masks, KV cache)``.
 +
 +    Runs without gradients: the VLM is frozen. The pooled features (mean over valid prefix tokens of the last
-+    layer) are the input of the value head.
++    layer) are the input of the value head. With ``bf16`` the frozen prefix runs under bf16 autocast and its KV
++    cache and features are cast back to fp32 for the (fp32, trainable) action expert: the prefix does not depend
++    on the trained weights, so rollout and training see identical values and the PPO ratio is unaffected.
 +    """
 +    from lerobot.policies.smolvla.modeling_smolvla import make_att_2d_masks
 +
-+    with torch.no_grad():
++    autocast = torch.autocast("cuda", dtype=torch.bfloat16) if bf16 else contextlib.nullcontext()
++    with torch.no_grad(), autocast:
 +        prefix_embs, prefix_pad_masks, prefix_att_masks = model.embed_prefix(
 +            images, img_masks, lang_tokens, lang_masks, state=state
 +        )
@@ -566,10 +803,17 @@
 +        )
 +        mask = prefix_pad_masks.to(prefix_outs[0].dtype).unsqueeze(-1)
 +        features = ((prefix_outs[0] * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)).float()
++    if bf16:
++        from transformers import DynamicCache
++
++        cache = DynamicCache()
++        for layer_idx, layer in enumerate(past_key_values.layers):
++            cache.update(layer.keys.float(), layer.values.float(), layer_idx)
++        past_key_values = cache
 +    return features, prefix_pad_masks, past_key_values
 --- /dev/null
 +++ b/rlinf/models/embodiment/smolvla/smolvla_sde_model.py
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,166 @@
 +# Copyright 2026 The RLinf Authors.
 +#
 +# Licensed under the Apache License, Version 2.0 (the "License");
@@ -611,8 +855,11 @@
 +
 +
 +class SmolVLAForFlowSDE(SmolVLAForFPO):
-+    def __init__(self, policy, *, noise_level: float = 0.5, num_steps: int | None = None, **kwargs: Any) -> None:
++    def __init__(
++        self, policy, *, noise_level: float = 0.5, num_steps: int | None = None, prefix_bf16: bool = False, **kwargs: Any
++    ) -> None:
 +        super().__init__(policy, **kwargs)
++        self.prefix_bf16 = bool(prefix_bf16)
 +        self.noise_level = float(noise_level)
 +        if num_steps is not None:
 +            # The number of Euler steps is shared by training rollouts and (deterministic) evaluation.
@@ -639,7 +886,7 @@
 +        mode: Literal["train", "eval"] = "train",
 +        **kwargs: Any,
 +    ) -> tuple[torch.Tensor, dict[str, Any]]:
-+        if mode == "eval":
++        if mode == "eval" and not self.prefix_bf16:
 +            return super(SmolVLAForFPO, self).predict_action_batch(env_obs, mode=mode, **kwargs)
 +        from lerobot.utils.constants import (
 +            OBS_LANGUAGE_ATTENTION_MASK,
@@ -652,21 +899,23 @@
 +        chunk, max_dim = int(config.chunk_size), int(config.max_action_dim)
 +        images, img_masks, lang_tokens, lang_masks, state = self._model_inputs(batch)
 +        features, prefix_pad_masks, past_key_values = sde.prefix_cache(
-+            self.policy.model, images, img_masks, lang_tokens, lang_masks, state
++            self.policy.model, images, img_masks, lang_tokens, lang_masks, state, bf16=self.prefix_bf16
 +        )
 +        batch_size, device = state.shape[0], state.device
 +        steps = self.denoise_steps
 +        timesteps = sde.get_timesteps(steps, device)
 +        chosen = random.randint(0, steps - 1)  # one stochastic step per rollout call, as in Pi0RL
 +
-+        x = torch.randn(batch_size, chunk, max_dim, device=device, dtype=torch.float32)
++        eval_mode = mode == "eval"  # deterministic ODE with the same prefix precision as training
++        noise = self._sample_noise(batch) if eval_mode else None
++        x = noise if noise is not None else torch.randn(batch_size, chunk, max_dim, device=device, dtype=torch.float32)
 +        x_prev = x_next = logprob = None
 +        for step in range(steps):
 +            idx = torch.full((batch_size,), step, device=device, dtype=torch.long)
 +            t = torch.full((batch_size,), float(timesteps[step]), device=device, dtype=torch.float32)
 +            v_t = self.policy.model.denoise_step(prefix_pad_masks, past_key_values, x, t).to(torch.float32)
 +            mean, std = sde.sample_mean_std(
-+                x, v_t, idx, sde=step == chosen, noise_level=self.noise_level, num_steps=steps
++                x, v_t, idx, sde=(step == chosen) and not eval_mode, noise_level=self.noise_level, num_steps=steps
 +            )
 +            new_x = mean + torch.randn_like(x) * std
 +            if step == chosen:
@@ -677,6 +926,8 @@
 +        actions = x[:, : self.num_action_chunks, : self.action_dim].float().cpu()
 +        if self.postprocessor is not None:
 +            actions = self.postprocessor(actions)
++        if eval_mode:
++            return actions, {"prev_logprobs": None, "prev_values": None, "forward_inputs": {}}
 +        prev_values = self._value(features, batch).reshape(batch_size, 1).cpu()
 +        forward_inputs = {
 +            "main_images": env_obs["main_images"].cpu(),
@@ -715,7 +966,7 @@
 +        batch[OBS_LANGUAGE_ATTENTION_MASK] = forward_inputs["lang_masks"].to(device)
 +        images, img_masks, lang_tokens, lang_masks, state = self._model_inputs(batch)
 +        features, prefix_pad_masks, past_key_values = sde.prefix_cache(
-+            self.policy.model, images, img_masks, lang_tokens, lang_masks, state
++            self.policy.model, images, img_masks, lang_tokens, lang_masks, state, bf16=self.prefix_bf16
 +        )
 +        logprob = self._step_logprob(
 +            prefix_pad_masks,
@@ -729,6 +980,104 @@
 +            "values": self._value(features, batch),
 +            "entropy": torch.zeros(batch_size, 1, device=device, dtype=torch.float32),
 +        }
+--- /dev/null
++++ b/rlinf/data/datasets/smolvla_sft.py
+@@ -0,0 +1,95 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Plain LeRobot demonstrations for SmolVLA flow-matching SFT (RL co-training).
++
++Unlike ``rlinf.data.datasets.recap.smolvla_cfg`` there is no advantage labelling or prompt suffix: every frame
++is a supervised sample (50-step action chunk, language task, images, state) for ``SmolVLAForRLActionPrediction.sft_forward``.
++"""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import Any
++
++import torch
++from omegaconf import DictConfig, OmegaConf
++from torch.utils.data import DataLoader, Dataset
++
++# RLinf collected datasets (libero10_task0_*) -> lerobot/libero keys.
++DEFAULT_KEY_MAP = {
++    "image": "observation.images.image",
++    "wrist_image": "observation.images.image2",
++    "state": "observation.state",
++    "actions": "action",
++}
++
++
++class SmolVLADemoDataset(Dataset):
++    def __init__(
++        self,
++        dataset_path: str,
++        chunk_size: int = 50,
++        key_map: dict[str, str] | None = None,
++        video_backend: str | None = None,
++    ) -> None:
++        from lerobot.datasets.lerobot_dataset import LeRobotDataset
++
++        root = Path(dataset_path)
++        key_map = dict(key_map or DEFAULT_KEY_MAP)
++        action_key = next(src for src, dst in key_map.items() if dst == "action")
++        probe = LeRobotDataset(f"local/{root.name}", root=root, video_backend=video_backend)
++        fps = probe.meta.fps
++        self.dataset = LeRobotDataset(
++            f"local/{root.name}",
++            root=root,
++            delta_timestamps={action_key: [i / fps for i in range(chunk_size)]},
++            video_backend=video_backend,
++        )
++        self.key_map = key_map
++        self.key_map[f"{action_key}_is_pad"] = "action_is_pad"
++
++    def __len__(self) -> int:
++        return len(self.dataset)
++
++    def __getitem__(self, idx: int) -> dict[str, Any]:
++        item = self.dataset[idx]
++        sample = {dst: item[src] for src, dst in self.key_map.items()}
++        sample["task"] = item["task"]
++        return sample
++
++
++def build_smolvla_demo_dataloader(cfg: DictConfig, data_path: str, seed: int = 0) -> DataLoader:
++    """Shuffled, endlessly re-iterable loader over the demonstrations in ``data_path``."""
++    model_cfg = cfg.actor.model
++    smolvla_cfg = model_cfg.get("smolvla", {}) or {}
++    key_map = cfg.actor.get("sft_key_map", None)
++    key_map = OmegaConf.to_container(key_map, resolve=True) if key_map else None
++    dataset = SmolVLADemoDataset(
++        dataset_path=data_path,
++        chunk_size=int(smolvla_cfg.get("chunk_size", 50)),
++        key_map=key_map,
++        video_backend=cfg.actor.get("sft_video_backend", None),
++    )
++    generator = torch.Generator().manual_seed(int(seed))
++    num_workers = int(cfg.actor.get("sft_num_workers", 0))
++    return DataLoader(
++        dataset,
++        batch_size=int(cfg.actor.get("sft_batch_size", cfg.actor.micro_batch_size)),
++        shuffle=True,
++        generator=generator,
++        num_workers=num_workers,
++        drop_last=True,
++        persistent_workers=num_workers > 0,
++    )
 --- /dev/null
 +++ b/examples/embodiment/config/libero_10_smolvla_fpo.yaml
 @@ -0,0 +1,179 @@
@@ -913,7 +1262,7 @@
 +  use_critic_model: False
 --- /dev/null
 +++ b/examples/embodiment/config/libero_10_smolvla_ppo_sde.yaml
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,198 @@
 +# PPO with a Flow-SDE policy (piRL, arXiv:2510.25889) for SmolVLA on LIBERO-10 Task 0. Hyper-parameters follow RLinf's
 +# PPO recipe (examples/embodiment/config/libero_10_ppo_openpi_pi05.yaml) except for the sample budget: 3 environments (host memory)
 +# give 15 episodes per update instead of 512. Model: rlinf/models/embodiment/smolvla/smolvla_sde_model.py (design: docs/flow_sde_ppo_smolvla_design.md).
@@ -965,6 +1314,7 @@
 +  logprob_last_dim: 7         # = action_dim
 +  entropy_type: token_level
 +  update_epoch: 4
++  recompute_logprobs: True      # old log-probs recomputed by the actor before each update: removes the bf16 batch-shape noise from the ratio
 +  target_kl: 0.1              # not in the RLinf recipe; stops the remaining epochs of an update when the mean epoch KL (k3) exceeds it
 +  adv_type: gae
 +  loss_type: actor_critic
@@ -994,6 +1344,13 @@
 +    use_fixed_reset_state_ids: True
 +    use_ordered_reset_state_ids: False
 +    use_rel_reward: True   # success is rewarded once (reward - previous step reward), as in the RLinf recipe
++    # Shaping (off by default): a one-off bonus when a target object is first grasped and lifted by lift_height [m]; the first
++    # object grasped earns rewards[0], the second rewards[1] (Task 0: alphabet soup and tomato sauce). Task success keeps its reward 1.
++    grasp_reward:
++      enabled: False
++      objects: [alphabet_soup_1, tomato_sauce_1]
++      rewards: [0.2, 0.3]
++      lift_height: 0.02
 +    reward_coef: ${algorithm.reward_coef}
 +    max_episode_steps: 480
 +    max_steps_per_rollout_epoch: 480
@@ -1043,6 +1400,13 @@
 +  global_batch_size: 120      # rollout entries per update (48 chunk steps x 3 envs x 5 epochs = 720) must be divisible by this
 +  seed: 1234
 +  enable_offload: False
++  # SFT co-training (RLinf's PPO + SFT on demonstrations): loss = PPO loss + sft_loss_weight * flow-matching loss of a demo batch,
++  # added to every PPO micro-batch (rlinf/data/datasets/smolvla_sft.py). Enable with actor.enable_sft_co_train=True.
++  enable_sft_co_train: False
++  sft_loss_weight: 5.0          # SFT grad norm is ~1-4 at weight 1; the PPO grad norm is ~30-50 before clipping
++  sft_data_path: "/workspace/libero_RL/data/smolvla_recap/v30/libero10_task0_sft_target3"   # LeRobot v3.0 root, 3 human demos of Task 0
++  sft_batch_size: 8
++  sft_num_workers: 0
 +
 +  model:
 +    model_type: "smolvla"
@@ -1064,6 +1428,7 @@
 +        enabled: True
 +        noise_level: 0.5        # piRL: 0.2 unstable, 0.5 best, 0.8 degrades
 +        num_steps: 5            # Euler steps (RLinf's pi0.5 recipe: 5; smolVLA's default is 10)
++        prefix_bf16: True       # frozen VLM prefix in bf16 (training ~2.7x, rollout policy ~1.5x faster); the expert and the loss stay fp32
 +        value_hidden_dims: [512, 256]
 +        state_dim: 8
 +
