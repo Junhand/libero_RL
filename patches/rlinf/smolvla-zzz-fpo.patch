@@ -269,7 +269,7 @@
          assert algorithm_cfg.get("adv_type", None) != "opd", (
 --- a/rlinf/envs/sim/libero/libero_env.py
 +++ b/rlinf/envs/sim/libero/libero_env.py
-@@ -180,6 +180,19 @@
+@@ -180,6 +180,24 @@
  
          self._init_rlt_policy_switch()
          self.prev_step_reward = np.zeros(self.num_envs)
@@ -281,33 +281,42 @@
 +            self.grasp_objects = list(grasp_cfg.objects)
 +            self.grasp_rewards = [float(r) for r in grasp_cfg.rewards]
 +            assert len(self.grasp_rewards) == len(self.grasp_objects)
++            # Bonus when a target object is in its goal place (e.g. in the basket) and released; the n-th object placed
++            # earns place_rewards[n]. The last placement completes the task, which has its own success reward.
++            self.place_rewards = [float(r) for r in grasp_cfg.get("place_rewards", [0.0] * len(self.grasp_objects))]
 +            self.grasp_lift = float(grasp_cfg.get("lift_height", 0.02))
 +            k = len(self.grasp_objects)
 +            self.grasp_seen = np.zeros((self.num_envs, k), dtype=bool)
++            self.place_seen = np.zeros((self.num_envs, k), dtype=bool)
 +            self.grasp_init_z = np.full((self.num_envs, k), np.nan)
 +            self.grasp_count = np.zeros(self.num_envs, dtype=np.int64)
++            self.place_count = np.zeros(self.num_envs, dtype=np.int64)
          self.use_rel_reward = cfg.use_rel_reward
          self.use_step_penalty = getattr(cfg, "use_step_penalty", False)
  
-@@ -842,6 +855,10 @@
+@@ -842,6 +860,12 @@
              mask = np.zeros(self.num_envs, dtype=bool)
              mask[env_idx] = True
              self.prev_step_reward[mask] = 0.0
 +            if self.grasp_objects:
 +                self.grasp_seen[mask] = False
++                self.place_seen[mask] = False
 +                self.grasp_init_z[mask] = np.nan
 +                self.grasp_count[mask] = 0
++                self.place_count[mask] = 0
              self.success_once[mask] = False
              self.fail_once[mask] = False
              self.returns[mask] = 0
-@@ -849,12 +866,33 @@
+@@ -849,12 +873,40 @@
              self._elapsed_steps[env_idx] = 0
          else:
              self.prev_step_reward[:] = 0
 +            if self.grasp_objects:
 +                self.grasp_seen[:] = False
++                self.place_seen[:] = False
 +                self.grasp_init_z[:] = np.nan
 +                self.grasp_count[:] = 0
++                self.place_count[:] = 0
              self.success_once[:] = False
              self.fail_once[:] = False
              self.returns[:] = 0.0
@@ -319,8 +328,8 @@
 +        bonus = np.zeros(self.num_envs)
 +        if not self.grasp_objects:
 +            return bonus
-+        status = self.env.grasp_status(self.grasp_objects)  # [N, K, 2]
-+        grasped, height = status[..., 0] > 0.5, status[..., 1]
++        status = self.env.grasp_status(self.grasp_objects)  # [N, K, 3]
++        grasped, height, in_goal = status[..., 0] > 0.5, status[..., 1], status[..., 2] > 0.5
 +        first_step = self._elapsed_steps == 1
 +        self.grasp_init_z[first_step] = height[first_step]  # the objects have barely moved after one step
 +        lifted = grasped & (height - self.grasp_init_z >= self.grasp_lift)
@@ -329,21 +338,27 @@
 +            bonus[env_id] += self.grasp_rewards[min(self.grasp_count[env_id], len(self.grasp_rewards) - 1)]
 +            self.grasp_count[env_id] += 1
 +        self.grasp_seen |= new
++        placed = in_goal & ~grasped & ~self.place_seen
++        for env_id, obj_id in zip(*np.nonzero(placed)):
++            bonus[env_id] += self.place_rewards[min(self.place_count[env_id], len(self.place_rewards) - 1)]
++            self.place_count[env_id] += 1
++        self.place_seen |= placed
 +        return bonus
 +
      def _record_metrics(self, step_reward, terminations, infos):
          episode_info = {}
          # Only accumulate returns while not yet succeeded
-@@ -868,6 +906,8 @@
+@@ -868,6 +920,9 @@
  
          self.success_once = self.success_once | terminations
          episode_info["success_once"] = self.success_once.copy()
 +        if self.grasp_objects:
 +            episode_info["grasp_count"] = self.grasp_count.copy()
++            episode_info["place_count"] = self.place_count.copy()
          episode_info["return"] = self.returns.copy()
          episode_info["episode_len"] = self.elapsed_steps.copy()
  
-@@ -1055,6 +1095,8 @@
+@@ -1055,6 +1110,8 @@
              step_reward = self._calc_step_reward(first_success)
          else:
              step_reward = self._calc_step_reward(terminations)
@@ -354,16 +369,18 @@
          if self.ignore_terminations:
 --- a/rlinf/envs/sim/libero/venv.py
 +++ b/rlinf/envs/sim/libero/venv.py
-@@ -221,6 +221,22 @@
+@@ -221,6 +221,30 @@
                          depth=depth,
                      )
                  )
 +            elif cmd == "grasp_status":
-+                # (grasped, height) of each named object: robosuite's contact-based grasp check of the gripper.
++                # (grasped, height, goal satisfied) of each named object: robosuite's contact-based grasp check of the gripper and
++                # the object's own goal predicate (e.g. in the basket).
 +                rob = getattr(env, "env", env)
 +                while hasattr(rob, "env"):
 +                    rob = rob.env
 +                gripper = rob.robots[0].gripper
++                goal_state = rob.parsed_problem["goal_state"]
 +                status = []
 +                for name in data["names"]:
 +                    grasped = bool(
@@ -372,18 +389,24 @@
 +                        )
 +                    )
 +                    height = float(rob.sim.data.body_xpos[rob.obj_body_id[name]][2])
-+                    status.append((grasped, height))
++                    # Does the task goal contain this object (e.g. ``In obj basket``) and is it satisfied?
++                    in_goal = any(
++                        bool(rob._eval_predicate(goal))
++                        for goal in goal_state
++                        if len(goal) == 3 and goal[1] == name
++                    )
++                    status.append((grasped, height, in_goal))
 +                p.send(status)
              elif cmd == "set_camera_rendering":
                  _set_camera_rendering(env, data)
                  p.send(None)
-@@ -284,3 +300,15 @@
+@@ -284,3 +308,15 @@
              self.workers[i].parent_remote.send(["set_camera_rendering", enabled])
          for i in id:
              self.workers[i].parent_remote.recv()
 +
 +    def grasp_status(self, names, id=None):
-+        """``[len(id), len(names), 2]`` array of (grasped, object height) from every environment process."""
++        """``[len(id), len(names), 3]`` array of (grasped, object height, goal predicate satisfied) from every environment process."""
 +        self._assert_is_not_closed()
 +        id = self._wrap_id(id)
 +        if self.is_async:
@@ -1262,7 +1285,7 @@
 +  use_critic_model: False
 --- /dev/null
 +++ b/examples/embodiment/config/libero_10_smolvla_ppo_sde.yaml
-@@ -0,0 +1,198 @@
+@@ -0,0 +1,200 @@
 +# PPO with a Flow-SDE policy (piRL, arXiv:2510.25889) for SmolVLA on LIBERO-10 Task 0. Hyper-parameters follow RLinf's
 +# PPO recipe (examples/embodiment/config/libero_10_ppo_openpi_pi05.yaml) except for the sample budget: 3 environments (host memory)
 +# give 15 episodes per update instead of 512. Model: rlinf/models/embodiment/smolvla/smolvla_sde_model.py (design: docs/flow_sde_ppo_smolvla_design.md).
@@ -1345,11 +1368,13 @@
 +    use_ordered_reset_state_ids: False
 +    use_rel_reward: True   # success is rewarded once (reward - previous step reward), as in the RLinf recipe
 +    # Shaping (off by default): a one-off bonus when a target object is first grasped and lifted by lift_height [m]; the first
-+    # object grasped earns rewards[0], the second rewards[1] (Task 0: alphabet soup and tomato sauce). Task success keeps its reward 1.
++    # object grasped earns rewards[0], the second rewards[1]; the first object put into the basket and released earns place_rewards[0]
++    # (Task 0: alphabet soup and tomato sauce). Task success keeps its reward 1.
 +    grasp_reward:
 +      enabled: False
 +      objects: [alphabet_soup_1, tomato_sauce_1]
-+      rewards: [0.2, 0.3]
++      rewards: [0.2, 0.2]          # n-th object grasped and lifted
++      place_rewards: [0.3, 0.0]    # n-th object in the basket and released (the second one is the task success: reward 1)
 +      lift_height: 0.02
 +    reward_coef: ${algorithm.reward_coef}
 +    max_episode_steps: 480
