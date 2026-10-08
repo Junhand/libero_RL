@@ -1,6 +1,3 @@
 [submodule "RLinf"]
 	path = RLinf
 	url = https://github.com/RLinf/RLinf.git
-[submodule "verl-vla"]
-	path = verl-vla
-	url = https://github.com/verl-project/verl-vla.git

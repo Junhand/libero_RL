@@ -36,3 +36,16 @@
 
 ## 6. 段階
 P0: SDE のステップの数値テスト（a=0 で ODE と一致、ロールアウトと再計算の対数確率が一致）。P1: RLinf への組み込みと、2 更新のスモークテスト。P2: Task 0 で数十更新。P3: 150 エピソードの評価（ベース 0.42、FPO、RL Token と比較）。
+
+## 7. 実装と最初の結果（2026-10-08）
+
+### 実装（`patches/rlinf/smolvla-zzz-fpo.patch` に FPO と同居）
+`smolvla/sde.py`（SDE の 1 ステップ、ガウス対数確率、プレフィックスのキャッシュ）、`smolvla/smolvla_sde_model.py`（`SmolVLAForFlowSDE`）、`examples/embodiment/config/libero_10_smolvla_ppo_sde.yaml`。`fsdp_config.save_training_state: False` で、再開用の状態の保存を省略できる（保存時のホストメモリ不足の回避）。単体テスト（`scripts/fpo/test_sde_model.py`）: ODE のループが lerobot の `sample_actions` と一致（誤差 5e-7）、ロールアウトと再計算の対数確率の差は 0、勾配は学習対象だけに流れる。
+
+### 実行結果
+1. 1 回目（`use_rel_reward: False`、デノイズ 10 ステップ、30 更新）: 更新 9 の success_once 0.66 をピークに悪化し、終盤は平均 約 0.11。最後の保存でホストメモリ不足。
+2. **報酬の誤り**: π0.5 の recipe は `use_rel_reward: True`（環境の既定値）で、成功の報酬は 1 回だけ。上の実行は `False` で、成功状態が続く間、毎ステップ +1 が足され、`returns_max=10` になっていた。FPO の実行も同じ誤りがあった。
+3. 2 回目（recipe に合わせて修正: `use_rel_reward: True`、デノイズ 5 ステップ、固定の初期状態、betas (0.9, 0.95)、weight decay 0.01、cosine）: 報酬は修正され（`returns_max=1.0`）、1 更新 約 3.8 分に高速化したが、**更新 10 以降の 4 更新で success_once が 0 に崩壊**（0.40, 0.13, 0.06, 0.20, 0.06, 0.26, 0.40, 0.06, 0.06, 0, 0, 0, 0）。13 更新で停止。
+- 更新 1（学習前の方策）は 0.40 で、ベースと同じ。学習で悪化している。
+- 推測（未検証）: 1 更新 15 エピソード（recipe は 512）では、成功が少ない更新で、アドバンテージが価値の誤差の雑音になり、正規化で引き伸ばされて、方策が悪化する。
+- 次の候補: 学習率を下げる（1e-6）、価値のみの更新を 3 回に延長（`critic_warmup_steps 72`）。環境 1・2 に依頼する指示文を作成済み（未送付）。
