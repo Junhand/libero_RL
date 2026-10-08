@@ -1191,7 +1191,7 @@
 +    )
 --- /dev/null
 +++ b/rlinf/utils/rollout_video.py
-@@ -0,0 +1,102 @@
+@@ -0,0 +1,149 @@
 +# Copyright 2026 The RLinf Authors.
 +#
 +# Licensed under the Apache License, Version 2.0 (the "License");
@@ -1253,6 +1253,37 @@
 +    return np.asarray(image)
 +
 +
++def _curve(draw, values: np.ndarray, box: tuple[int, int, int, int], color, *, bars: bool = False) -> None:
++    """Draw ``values`` (one per chunk) scaled into ``box`` = (x0, y0, x1, y1); zero is kept inside the box."""
++    x0, y0, x1, y1 = box
++    lo, hi = min(float(values.min()), 0.0), max(float(values.max()), 1e-6)
++    scale = (y1 - y0) / (hi - lo)
++    n = len(values)
++    xs = [x0 + (x1 - x0) * (i + 0.5) / n for i in range(n)]
++    ys = [y1 - (float(v) - lo) * scale for v in values]
++    if bars:
++        zero = y1 - (0.0 - lo) * scale
++        for x, y in zip(xs, ys):
++            if abs(zero - y) >= 1:
++                draw.line([(x, zero), (x, y)], fill=color, width=3)
++    else:
++        draw.line(list(zip(xs, ys)), fill=color, width=1)
++
++
++def _panel(width: int, height: int, reward: np.ndarray, value: np.ndarray, advantage: np.ndarray):
++    """Static background of the plot panel: chunk reward (bars), value (cyan) and advantage (green) over the episode."""
++    from PIL import Image, ImageDraw
++
++    image = Image.new("RGB", (width, height), (20, 20, 20))
++    draw = ImageDraw.Draw(image)
++    box = (6, 16, width - 6, height - 6)
++    _curve(draw, advantage, box, (80, 220, 80))
++    _curve(draw, value, box, (80, 200, 255))
++    _curve(draw, reward, box, (255, 170, 40), bars=True)
++    draw.text((6, 2), "reward/chunk (orange bars)   value (cyan)   advantage, normalized (green)", fill=(220, 220, 220))
++    return image
++
++
 +def save_rollout_videos(
 +    rollout_batch: dict[str, Any],
 +    out_dir: str,
@@ -1271,6 +1302,8 @@
 +    n_chunks, n_envs = main.shape[:2]
 +    rewards = rollout_batch["rewards"].float().cpu().numpy().sum(-1)  # [T, E] chunk reward
 +    values = rollout_batch["prev_values"].float().cpu().numpy()[:n_chunks, :, 0]  # [T, E] value before the chunk
++    advantage = rollout_batch.get("advantages")
++    advantage = None if advantage is None else advantage.float().cpu().numpy().reshape(n_chunks, n_envs, -1)[:, :, 0]
 +    loss_mask = rollout_batch.get("loss_mask")
 +    if loss_mask is not None:
 +        valid = loss_mask.cpu().numpy().reshape(n_chunks, n_envs, -1).max(-1) > 0
@@ -1285,11 +1318,25 @@
 +        n = int(max(length[env], 1))
 +        total = 0.0
 +        frames = []
++        adv = np.zeros(n) if advantage is None else advantage[:n, env]
++        base = _panel(main.shape[3] * 2, 80, rewards[:n, env], values[:n, env], adv)
++        from PIL import ImageDraw
++
 +        for t in range(min(n + 1, n_chunks)):  # one frame after the last action when available
 +            total += float(rewards[t - 1, env]) if t > 0 else 0.0
 +            frame = np.concatenate([main[t, env], wrist[t, env]], axis=1)
-+            lines = [f"{label.upper()}  chunk {t}/{n}  step {t * 10}", f"return so far {total:.2f}   V {values[t, env]:.2f}"]
-+            frames.append(_annotate(frame, lines))
++            r_now = float(rewards[t, env]) if t < n else 0.0
++            a_now = float(adv[t]) if t < n else 0.0
++            lines = [
++                f"{label.upper()}  chunk {t}/{n}  step {t * 10}",
++                f"reward this chunk {r_now:+.2f}   return so far {total:.2f}",
++                f"V {values[t, env]:.2f}   advantage {a_now:+.2f}",
++            ]
++            panel = base.copy()
++            draw = ImageDraw.Draw(panel)
++            x = 6 + (panel.width - 12) * (min(t, n - 1) + 0.5) / n
++            draw.line([(x, 14), (x, panel.height - 4)], fill=(255, 255, 255), width=1)
++            frames.append(np.concatenate([_annotate(frame, lines), np.asarray(panel)], axis=0))
 +        path = os.path.join(out_dir, f"{label}_env{env}.mp4")
 +        imageio.mimwrite(path, frames, fps=fps, codec="libx264", quality=7, macro_block_size=None)
 +        paths.append(path)
