@@ -35,7 +35,44 @@
          **rlt_kwargs,
 --- a/rlinf/workers/actor/embodied_fsdp_actor_worker.py
 +++ b/rlinf/workers/actor/embodied_fsdp_actor_worker.py
-@@ -425,10 +425,12 @@
+@@ -12,6 +12,8 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
++import os
++
+ import numpy as np
+ import torch
+ from omegaconf import DictConfig, OmegaConf
+@@ -333,10 +335,27 @@
+         if kwargs["loss_mask_sum"] is not None:
+             self.rollout_batch.update({"loss_mask_sum": kwargs["loss_mask_sum"]})
+ 
++        self._save_rollout_videos()
+         rollout_metrics = compute_rollout_metrics(self.rollout_batch)
+         rollout_metrics.update(self._group_success_metrics)
+         return rollout_metrics
+ 
++    def _save_rollout_videos(self) -> None:
++        """Write a success and a failure video of this update from the stored rollout (``runner.rollout_video``)."""
++        video_cfg = self.cfg.runner.get("rollout_video", None)
++        if video_cfg is None or not bool(video_cfg.get("enabled", False)) or self._rank != 0:
++            return
++        every = int(video_cfg.get("every_n_updates", 1))
++        if every <= 0 or self.version % every != 0:
++            return
++        try:
++            from rlinf.utils.rollout_video import save_rollout_videos
++
++            out_dir = os.path.join(self.cfg.runner.logger.log_path, "videos", f"step_{self.version}")
++            save_rollout_videos(self.rollout_batch, out_dir, fps=int(video_cfg.get("fps", 4)))
++        except Exception as error:  # videos must never stop the training
++            self.log_warning(f"rollout video was not written: {error!r}")
++
+     @Worker.timer("actor/compute_opd_teacher_logprobs")
+     def compute_opd_teacher_logprobs(self) -> None:
+         assert self.rollout_batch.get("teacher_logprobs", None) is None, (
+@@ -425,10 +444,12 @@
  
          rollout_logprobs = self.rollout_batch["prev_logprobs"]
          rollout_size = rollout_logprobs.shape[0]
@@ -52,7 +89,7 @@
  
          recomputed_logprobs = []
          with torch.no_grad():
-@@ -531,6 +533,20 @@
+@@ -531,6 +552,20 @@
              self.sft_iterator = iter(self.data_loader)
              self.train_epoch = 0
              self.sft_loss_weight = self.cfg.actor.get("sft_loss_weight", 0.1)
@@ -73,7 +110,7 @@
          else:
              raise KeyError(
                  f"not support such model type {self.cfg.actor.model.model_type} for SFT right now."
-@@ -545,18 +561,24 @@
+@@ -545,18 +580,24 @@
          metrics_data["ppo_loss"] = loss.clone().detach().item()
  
          # Get next data batch
@@ -105,7 +142,7 @@
          metrics_data["sft_loss"] = sft_loss.detach().item()
          total_loss = loss + self.sft_loss_weight * sft_loss
          loss = total_loss
-@@ -624,7 +646,9 @@
+@@ -624,7 +665,9 @@
          if self.cfg.algorithm.get("recompute_logprobs", False):
              append_to_dict(metrics, self.recompute_prev_logprobs(batch_size_per_rank))
          update_epoch = self.cfg.algorithm.get("update_epoch", 1)
@@ -115,7 +152,7 @@
              rollout_dataloader_iter = split_dict_to_chunk(
                  self.rollout_batch,
                  rollout_size // batch_size_per_rank,
-@@ -667,6 +691,16 @@
+@@ -667,6 +710,16 @@
                  if len(lr_list) > 1:
                      data["critic/lr"] = lr_list[1]
                  append_to_dict(metrics, data)
@@ -132,7 +169,7 @@
          # put LR scheduler step here
          self.lr_scheduler.step()
          self.optimizer.zero_grad()
-@@ -753,7 +787,9 @@
+@@ -753,7 +806,9 @@
              "loss_type": self.cfg.algorithm.loss_type,
              "logprob_type": self.cfg.algorithm.logprob_type,
              "reward_type": self.cfg.algorithm.reward_type,
@@ -416,6 +453,57 @@
 +        return np.asarray(
 +            [self.workers[i].parent_remote.recv() for i in id], dtype=np.float64
 +        )
+--- a/rlinf/utils/metric_logger.py
++++ b/rlinf/utils/metric_logger.py
+@@ -189,6 +189,13 @@
+             if backend is None or default_backend in backend:
+                 logger_instance.log(data=data, step=step)
+ 
++    def log_videos(self, videos: dict[str, str], step, fps: int = 4):
++        """Upload mp4 files (``{name: path}``) to Weights & Biases; a no-op without the wandb backend."""
++        if "wandb" not in self.logger_backends or not videos:
++            return
++        wandb = self.logger["wandb"]
++        wandb.log({name: wandb.Video(path, fps=fps, format="mp4") for name, path in videos.items()}, step=step)
++
+     def log_table(self, df_data, name, step):
+         if "wandb" in self.logger_backends:
+             table = self.logger["wandb"].Table(dataframe=df_data)
+--- a/rlinf/runners/embodied_runner.py
++++ b/rlinf/runners/embodied_runner.py
+@@ -487,6 +487,24 @@
+         self.env.stop_profile().wait()
+         self.logger.info(f"Closed profiling window at step {step_idx}")
+ 
++    def _upload_rollout_videos(self, step: int) -> None:
++        """Send the videos the actor wrote for this update (``runner.rollout_video``) to the wandb logger."""
++        video_cfg = self.cfg.runner.get("rollout_video", None)
++        if video_cfg is None or not bool(video_cfg.get("enabled", False)):
++            return
++        directory = os.path.join(self.metric_logger.log_path, "videos", f"step_{self.global_step}")
++        if not os.path.isdir(directory):
++            return
++        try:
++            videos = {
++                f"rollout_video/{os.path.splitext(name)[0].split('_env')[0]}": os.path.join(directory, name)
++                for name in sorted(os.listdir(directory))
++                if name.endswith(".mp4")
++            }
++            self.metric_logger.log_videos(videos, step, fps=int(video_cfg.get("fps", 4)))
++        except Exception as error:  # uploading must never stop the training
++            self.logger.warning(f"rollout video upload failed: {error!r}")
++
+     def run(self):
+         if self.cfg.runner.get("use_training_pipeline", False):
+             return self.run_pipeline()
+@@ -540,6 +558,7 @@
+                     actor_rollout_metrics = (
+                         self.actor.compute_advantages_and_returns().wait()
+                     )
++                self._upload_rollout_videos(_step)
+ 
+                 # actor training.
+                 with self.timer("actor_training"):
 --- /dev/null
 +++ b/rlinf/models/embodiment/smolvla/fpo.py
 @@ -0,0 +1,108 @@
@@ -1102,6 +1190,111 @@
 +        persistent_workers=num_workers > 0,
 +    )
 --- /dev/null
++++ b/rlinf/utils/rollout_video.py
+@@ -0,0 +1,102 @@
++# Copyright 2026 The RLinf Authors.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     https://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++"""Videos of training episodes built from the rollout data the actor already holds (no extra inference).
++
++The actor stores the observation of every action chunk (agent-view and wrist images) for the PPO update, so one
++frame per chunk (every ``num_action_chunks`` environment steps) is available. One successful and one failed
++episode are written per update as ``<out_dir>/{success,fail}_env<k>.mp4`` (agent view | wrist view, with the chunk
++index, the cumulative reward and the value estimate).
++"""
++
++from __future__ import annotations
++
++import os
++from typing import Any
++
++import numpy as np
++import torch
++
++
++def _first_index(mask: np.ndarray) -> int | None:
++    idx = np.flatnonzero(mask)
++    return int(idx[0]) if idx.size else None
++
++
++def select_episodes(success: np.ndarray) -> list[tuple[str, int]]:
++    """``[("success", env), ("fail", env)]`` for the first successful and the first failed episode.
++
++    If one kind is missing, the first two episodes are used instead and labelled by their own outcome.
++    """
++    ok, bad = _first_index(success), _first_index(~success)
++    chosen = [(label, e) for label, e in (("success", ok), ("fail", bad)) if e is not None]
++    if len(chosen) < 2:
++        chosen = [("success" if success[e] else "fail", e) for e in range(min(2, len(success)))]
++    return chosen
++
++
++def _annotate(frame: np.ndarray, lines: list[str]) -> np.ndarray:
++    from PIL import Image, ImageDraw
++
++    image = Image.fromarray(frame)
++    draw = ImageDraw.Draw(image)
++    y = 3
++    for line in lines:
++        draw.rectangle([0, y - 1, 8 + 6 * len(line), y + 10], fill=(0, 0, 0))
++        draw.text((4, y), line, fill=(255, 255, 255))
++        y += 12
++    return np.asarray(image)
++
++
++def save_rollout_videos(
++    rollout_batch: dict[str, Any],
++    out_dir: str,
++    *,
++    fps: int = 4,
++    max_success_reward: float = 0.99,
++) -> list[str]:
++    """Write the videos and return their paths (empty list if the batch has no images)."""
++    import imageio.v2 as imageio
++
++    inputs = rollout_batch.get("forward_inputs") or {}
++    main, wrist = inputs.get("main_images"), inputs.get("wrist_images")
++    if main is None or wrist is None:
++        return []
++    main, wrist = main.cpu().numpy(), wrist.cpu().numpy()  # [T, E, H, W, 3] uint8
++    n_chunks, n_envs = main.shape[:2]
++    rewards = rollout_batch["rewards"].float().cpu().numpy().sum(-1)  # [T, E] chunk reward
++    values = rollout_batch["prev_values"].float().cpu().numpy()[:n_chunks, :, 0]  # [T, E] value before the chunk
++    loss_mask = rollout_batch.get("loss_mask")
++    if loss_mask is not None:
++        valid = loss_mask.cpu().numpy().reshape(n_chunks, n_envs, -1).max(-1) > 0
++    else:
++        valid = np.ones((n_chunks, n_envs), dtype=bool)
++    length = valid.sum(0)  # valid chunks per episode (the chunk in which the episode ends is included)
++    success = ((rewards >= max_success_reward) & valid).any(0)
++
++    os.makedirs(out_dir, exist_ok=True)
++    paths = []
++    for label, env in select_episodes(success):
++        n = int(max(length[env], 1))
++        total = 0.0
++        frames = []
++        for t in range(min(n + 1, n_chunks)):  # one frame after the last action when available
++            total += float(rewards[t - 1, env]) if t > 0 else 0.0
++            frame = np.concatenate([main[t, env], wrist[t, env]], axis=1)
++            lines = [f"{label.upper()}  chunk {t}/{n}  step {t * 10}", f"return so far {total:.2f}   V {values[t, env]:.2f}"]
++            frames.append(_annotate(frame, lines))
++        path = os.path.join(out_dir, f"{label}_env{env}.mp4")
++        imageio.mimwrite(path, frames, fps=fps, codec="libx264", quality=7, macro_block_size=None)
++        paths.append(path)
++    return paths
+--- /dev/null
 +++ b/examples/embodiment/config/libero_10_smolvla_fpo.yaml
 @@ -0,0 +1,179 @@
 +# Vanilla Flow Policy Optimization (FPO, arXiv:2507.21053) for SmolVLA on LIBERO-10 Task 0.
@@ -1285,7 +1478,7 @@
 +  use_critic_model: False
 --- /dev/null
 +++ b/examples/embodiment/config/libero_10_smolvla_ppo_sde.yaml
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,204 @@
 +# PPO with a Flow-SDE policy (piRL, arXiv:2510.25889) for SmolVLA on LIBERO-10 Task 0. Hyper-parameters follow RLinf's
 +# PPO recipe (examples/embodiment/config/libero_10_ppo_openpi_pi05.yaml) except for the sample budget: 3 environments (host memory)
 +# give 15 episodes per update instead of 512. Model: rlinf/models/embodiment/smolvla/smolvla_sde_model.py (design: docs/flow_sde_ppo_smolvla_design.md).
@@ -1320,6 +1513,10 @@
 +    logger_backends: ["tensorboard"]
 +
 +  max_epochs: 40 # number of PPO updates
++  rollout_video:                # videos made from the stored training rollouts (no extra inference): one success, one failure
++    enabled: False
++    every_n_updates: 1
++    fps: 4
 +  max_steps: -1
 +  only_eval: False
 +  val_check_interval: -1
