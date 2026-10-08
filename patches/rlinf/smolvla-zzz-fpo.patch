@@ -1427,7 +1427,7 @@
 +      sde:
 +        enabled: True
 +        noise_level: 0.5        # piRL: 0.2 unstable, 0.5 best, 0.8 degrades
-+        num_steps: 5            # Euler steps (RLinf's pi0.5 recipe: 5; smolVLA's default is 10)
++        num_steps: 10           # Euler steps (smolVLA's default; RLinf's pi0.5 recipe uses 5). Evaluate with the same value (NSTEPS)
 +        prefix_bf16: True       # frozen VLM prefix in bf16 (training ~2.7x, rollout policy ~1.5x faster); the expert and the loss stay fp32
 +        value_hidden_dims: [512, 256]
 +        state_dim: 8
