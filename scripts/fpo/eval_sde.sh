@@ -2,7 +2,7 @@
 # 50-episode evaluation (50 fixed initial states of Task 0, 2 envs x 25 passes) of a Flow-SDE PPO checkpoint, in fp32 through the
 # SmolVLAForFlowSDE wrapper (deterministic ODE with the trained number of Euler steps).
 #   DEV=<dev copy> ./eval_sde.sh <name> <seed> [full_weights.pt]     (no weights = the base weights through the same wrapper)
-ROOT=/workspace/libero_RL; DEV=${DEV:-$ROOT/tmp/rlinf_dev}; NAME=${1:?name}; SEED=${2:?seed}; CKW=${3:-}
+ROOT=${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}; DEV=${DEV:-$ROOT/tmp/rlinf_dev}; NAME=${1:?name}; SEED=${2:?seed}; CKW=${3:-}
 source $ROOT/RLinf/.venv-smolvla/bin/activate; export HF_HUB_OFFLINE=1
 OUT=$ROOT/tmp/hybrid_fpo/eval_${NAME}_seed${SEED}.log
 CK=""; [ -n "$CKW" ] && CK="runner.ckpt_path=$CKW"

@@ -5,6 +5,11 @@ description: libero_RL リポジトリで進行中の「smolVLA (lerobot/smolvla
 
 # libero_RL: smolVLA 版 RECAP 再現 — 現状スキル
 
+> **2026-10-09 時点の注意:** いまの作業は RECAP ではなく、smolVLA の **Flow-SDE PPO**（RLinf の π0.5 の PPO の移植）。
+> 現状・方針・結果・運用ルール・新しい環境（git clone）での立ち上げ手順は、
+> **`docs/handoff_ppo_smolvla_2026-10-09.md` が一次情報**。まずそれを読むこと。以下は RECAP（〜2026-10-02）の記録で、
+> 「既知のハマりどころ」と運用上の注意（pkill 禁止、メモリ上限、長時間実行の監視）は PPO にも当てはまる。
+
 ## このプロジェクトの目的
 
 RLinf の RECAP（advantage-conditioned SFT）手法を、smolVLA（`lerobot/smolvla_libero`）で

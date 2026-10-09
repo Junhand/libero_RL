@@ -13,3 +13,6 @@ collected_v2/
 
 # temporary work files
 tmp/
+
+# python bytecode
+__pycache__/

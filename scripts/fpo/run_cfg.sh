@@ -1,6 +1,6 @@
 #!/bin/bash
 # FPO smoke / run script (development copy of RLinf). Usage: EPOCHS=<updates> ./run_fpo.sh [hydra overrides...]
-ROOT=/workspace/libero_RL; DEV=$ROOT/tmp/rlinf_dev
+ROOT=${ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}; DEV=$ROOT/tmp/rlinf_dev
 cd $DEV && source $ROOT/RLinf/.venv-smolvla/bin/activate
 export EMBODIED_PATH=$DEV/examples/embodiment REPO_PATH=$DEV PYTHONPATH=$DEV
 export WANDB_CONSOLE=off WANDB_DISABLE_CODE=true WANDB__DISABLE_STATS=true WANDB_SILENT=true
